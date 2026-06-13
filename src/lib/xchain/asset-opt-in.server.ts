@@ -11,7 +11,10 @@ import type {
   XChainAssetOptInSubmitResult,
 } from "@/lib/xchain/types";
 import { validateEvmAddress } from "@/lib/xchain/validate";
-import { getVoiAlgodClient } from "@/lib/voi/client.server";
+import {
+  buildAvmUsdcOptInTransaction,
+  isAvmAccountOptedIntoUsdc,
+} from "@/lib/voi/avm-usdc-opt-in.server";
 import { VOI_NETWORK, VOI_USDC_ASSET_ID } from "@/lib/voi/constants";
 
 export async function getVoiUsdcOptInStatus(evmAddress: string): Promise<VoiUsdcOptInStatus> {
@@ -21,10 +24,7 @@ export async function getVoiUsdcOptInStatus(evmAddress: string): Promise<VoiUsdc
   }
 
   const addresses = await deriveXChainAddresses(validation.normalized);
-  const optedIn = await isAccountOptedIntoAsset(
-    addresses.voiExecutionAddress,
-    VOI_USDC_ASSET_ID,
-  );
+  const optedIn = await isAvmAccountOptedIntoUsdc(addresses.voiExecutionAddress);
 
   return {
     assetId: VOI_USDC_ASSET_ID,
@@ -32,16 +32,6 @@ export async function getVoiUsdcOptInStatus(evmAddress: string): Promise<VoiUsdc
     voiExecutionAddress: addresses.voiExecutionAddress,
     optedIn,
   };
-}
-
-export async function isAccountOptedIntoAsset(account: string, assetId: number): Promise<boolean> {
-  const algod = getVoiAlgodClient();
-  try {
-    await algod.accountAssetInformation(account, assetId).do();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function prepareXChainUsdcOptIn(
@@ -54,20 +44,11 @@ export async function prepareXChainUsdcOptIn(
 
   const addresses = await deriveXChainAddresses(validation.normalized);
 
-  if (await isAccountOptedIntoAsset(addresses.voiExecutionAddress, VOI_USDC_ASSET_ID)) {
+  if (await isAvmAccountOptedIntoUsdc(addresses.voiExecutionAddress)) {
     throw new Error("Execution address is already opted into USDC on Voi.");
   }
 
-  const algod = getVoiAlgodClient();
-  const suggestedParams = await algod.getTransactionParams().do();
-
-  const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-    sender: addresses.voiExecutionAddress,
-    receiver: addresses.voiExecutionAddress,
-    amount: 0,
-    assetIndex: VOI_USDC_ASSET_ID,
-    suggestedParams,
-  });
+  const txn = await buildAvmUsdcOptInTransaction(addresses.voiExecutionAddress);
 
   const unsignedTxnBase64 = Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString("base64");
   const typedData = buildXChainTypedDataForTxns([txn]);

@@ -150,7 +150,7 @@ function AccountPage() {
               display={walletAddress ? truncateAddress(walletAddress) : undefined}
             />
             <ClientOnly>
-              <VoiUsdcOptInDebugSection walletAddress={walletAddress} />
+              <VoiUsdcOptInDebugSection />
               <X402DebugSection walletAddress={walletAddress} />
             </ClientOnly>
           </div>

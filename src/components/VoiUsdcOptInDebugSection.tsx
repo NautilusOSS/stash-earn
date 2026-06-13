@@ -1,47 +1,45 @@
 import { CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 
-import { useVoiUsdcOptIn } from "@/hooks/useVoiUsdcOptIn";
+import { usePlatformAvmUsdcOptIn } from "@/hooks/usePlatformAvmUsdcOptIn";
 import { truncateAddress } from "@/lib/privy/constants";
-import { VOI_BLOCK_EXPLORER_TX } from "@/lib/voi/constants";
-
-type VoiUsdcOptInDebugSectionProps = {
-  walletAddress: string | undefined;
-};
+import { VOI_BLOCK_EXPLORER_TX, VOI_USDC_ASSET_ID } from "@/lib/voi/constants";
 
 /**
- * Debug-only: Voi mainnet USDC (ASA 302190) opt-in status and manual opt-in
- * via xChain execution address + EVM EIP-712 signing.
+ * Debug-only: USDC (ASA 302190) opt-in status for the platform AVM account
+ * derived from ALGORAND_MNEMONIC. Opt-in is server-signed (no wallet prompt).
  */
-export function VoiUsdcOptInDebugSection({ walletAddress }: VoiUsdcOptInDebugSectionProps) {
+export function VoiUsdcOptInDebugSection() {
   const {
-    assetId,
     status,
     isLoadingStatus,
     statusError,
     optedIn,
+    isConfigured,
     optIn,
-    isBusy,
-    isPreparing,
-    isSigning,
-    isSubmitting,
-    submitResult,
-    error,
-  } = useVoiUsdcOptIn(walletAddress);
+    isOptingIn,
+    optInResult,
+    optInError,
+  } = usePlatformAvmUsdcOptIn();
 
-  const statusLabel = isLoadingStatus
-    ? "Checking…"
-    : statusError
-      ? "Error"
-      : optedIn
-        ? "Opted in"
-        : "Not opted in";
+  const statusLabel = !isConfigured
+    ? "ALGORAND_MNEMONIC not set"
+    : isLoadingStatus
+      ? "Checking…"
+      : statusError
+        ? "Error"
+        : optedIn
+          ? "Opted in"
+          : "Not opted in";
+
+  const txId = optInResult?.txId;
 
   return (
     <div className="px-4 py-3.5">
-      <p className="text-xs text-muted-foreground">Voi USDC opt-in</p>
+      <p className="text-xs text-muted-foreground">Platform AVM USDC opt-in</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        ASA <span className="font-mono text-foreground">{assetId}</span> on execution address{" "}
-        {status?.voiExecutionAddress ? truncateAddress(status.voiExecutionAddress) : "—"}
+        ASA <span className="font-mono text-foreground">{VOI_USDC_ASSET_ID}</span> on mnemonic
+        account{" "}
+        {status?.avmAddress ? truncateAddress(status.avmAddress) : "—"}
       </p>
 
       <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
@@ -62,36 +60,34 @@ export function VoiUsdcOptInDebugSection({ walletAddress }: VoiUsdcOptInDebugSec
 
       {statusError ? <p className="mt-2 text-sm text-destructive">{statusError}</p> : null}
 
-      {!optedIn && !isLoadingStatus && !statusError ? (
+      {isConfigured && !optedIn && !isLoadingStatus && !statusError ? (
         <button
           type="button"
           onClick={() => void optIn()}
-          disabled={!walletAddress || isBusy}
+          disabled={isOptingIn}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-secondary py-3 text-sm font-medium disabled:opacity-50"
         >
-          {isBusy ? (
+          {isOptingIn ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              {isPreparing ? "Preparing…" : isSigning ? "Sign in wallet…" : "Submitting…"}
+              Opting in…
             </>
           ) : (
-            "Opt in to USDC on Voi"
+            "Opt in platform AVM account"
           )}
         </button>
       ) : null}
 
-      {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
+      {optInError ? <p className="mt-2 text-sm text-destructive">{optInError}</p> : null}
 
-      {submitResult ? (
+      {txId ? (
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-positive/10 px-3 py-2 text-sm text-positive">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0">
             <p className="font-medium">USDC opt-in confirmed</p>
-            <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
-              {submitResult.txId}
-            </p>
+            <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">{txId}</p>
             <a
-              href={`${VOI_BLOCK_EXPLORER_TX}/${submitResult.txId}`}
+              href={`${VOI_BLOCK_EXPLORER_TX}/${txId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-foreground underline underline-offset-2"

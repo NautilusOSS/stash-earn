@@ -2,16 +2,34 @@ import algosdk from "algosdk";
 
 import { getX402Config } from "./config";
 
+/** Strip inline `#` comments (common in .env mnemonic lines). */
+export function normalizeAlgorandMnemonic(raw: string): string {
+  const withoutComment = raw.split("#")[0]?.trim() ?? raw.trim();
+  return withoutComment.replace(/\s+/g, " ").trim();
+}
+
+/** algosdk v3 uses Address objects — coerce to base32 string for APIs and server fn responses. */
+export function formatAlgorandAddress(address: string | algosdk.Address): string {
+  return typeof address === "string" ? address : address.toString();
+}
+
+/** Platform AVM account from ALGORAND_MNEMONIC only. */
+export function loadAlgorandMnemonicAccount(): algosdk.Account | null {
+  const raw = process.env.ALGORAND_MNEMONIC?.trim();
+  if (!raw) return null;
+  return algosdk.mnemonicToSecretKey(normalizeAlgorandMnemonic(raw));
+}
+
 /**
- * Loads an Algorand account from server env for future settlement/accounting.
+ * Loads an Algorand account from server env for settlement/accounting.
+ * Prefers ALGORAND_MNEMONIC, then ALGORAND_PRIVATE_KEY.
  * SECURITY: Never expose this account or mnemonic to client code.
  */
 export function loadAlgorandAccount(): algosdk.Account | null {
-  const { algorand } = getX402Config();
+  const mnemonicAccount = loadAlgorandMnemonicAccount();
+  if (mnemonicAccount) return mnemonicAccount;
 
-  if (algorand.mnemonic) {
-    return algosdk.mnemonicToSecretKey(algorand.mnemonic);
-  }
+  const { algorand } = getX402Config();
 
   if (algorand.privateKey) {
     const raw = algorand.privateKey.trim();

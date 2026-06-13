@@ -7,9 +7,10 @@ import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
+import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
-import { getUserAvatar } from "@/lib/privy/user";
+import { getUserAvatar, getUserWalletAddress } from "@/lib/privy/user";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -28,7 +29,9 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { user } = usePrivy();
-  const { balance, apy: fallbackApy, transactions } = useStash();
+  const { apy: fallbackApy, transactions } = useStash();
+  const walletAddress = getUserWalletAddress(user);
+  const { balance, isLoading: balanceLoading } = useWalletUsdcBalance(walletAddress);
   const { supplyApyDecimal, supplyApyLabel } = useDorkFiSupplyApy();
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
 
@@ -42,7 +45,10 @@ function Home() {
   const annual = balance * apy;
   const daily = annual / 365;
 
-  const [dollars, cents] = fmtUSD(balance).replace("$", "").split(".");
+  const balanceLabel = balanceLoading ? "—" : fmtUSD(balance).replace("$", "");
+  const [dollars, cents] = balanceLabel.includes(".")
+    ? balanceLabel.split(".")
+    : [balanceLabel, "00"];
   const recent = transactions.slice(0, 4);
 
   return (
@@ -155,6 +161,7 @@ function Home() {
         mode={sheet ?? "deposit"}
         open={sheet !== null}
         onOpenChange={(o) => !o && setSheet(null)}
+        walletAddress={walletAddress}
       />
     </MobileShell>
   );

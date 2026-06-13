@@ -11,7 +11,6 @@ export interface Transaction {
 }
 
 interface StashState {
-  balance: number;
   apy: number; // 0.0487 = 4.87%
   transactions: Transaction[];
   deposit: (amount: number, note?: string) => void;
@@ -36,12 +35,10 @@ function daysAgo(n: number) {
 }
 
 export const useStash = create<StashState>((set) => ({
-  balance: 2548.12,
   apy: 0.0487,
   transactions: seed,
   deposit: (amount, note) =>
     set((s) => ({
-      balance: round(s.balance + amount),
       transactions: [
         { id: crypto.randomUUID(), type: "deposit", amount, date: new Date().toISOString(), note: note ?? "Bank transfer" },
         ...s.transactions,
@@ -49,17 +46,12 @@ export const useStash = create<StashState>((set) => ({
     })),
   withdraw: (amount, note) =>
     set((s) => ({
-      balance: round(Math.max(0, s.balance - amount)),
       transactions: [
         { id: crypto.randomUUID(), type: "withdrawal", amount, date: new Date().toISOString(), note: note ?? "To linked bank" },
         ...s.transactions,
       ],
     })),
 }));
-
-function round(n: number) {
-  return Math.round(n * 100) / 100;
-}
 
 export const fmtUSD = (n: number, opts: Intl.NumberFormatOptions = {}) =>
   new Intl.NumberFormat("en-US", {

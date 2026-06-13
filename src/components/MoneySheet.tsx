@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AmountKeypad } from "./AmountKeypad";
+import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
 import { Building2, CreditCard, FileText, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -23,12 +25,16 @@ export function MoneySheet({
   mode,
   open,
   onOpenChange,
+  walletAddress,
 }: {
   mode: Mode;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  walletAddress: string | undefined;
 }) {
-  const { balance, deposit, withdraw } = useStash();
+  const queryClient = useQueryClient();
+  const { balance, isLoading: balanceLoading } = useWalletUsdcBalance(walletAddress);
+  const { deposit, withdraw } = useStash();
   const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<string>(mode === "deposit" ? "bank" : "bank");
   const [done, setDone] = useState(false);
@@ -55,6 +61,7 @@ export function MoneySheet({
       withdraw(numeric, `To ${label}`);
       toast.success("Your withdrawal is on the way.");
     }
+    queryClient.invalidateQueries({ queryKey: ["wallet-usdc-balance"] });
     setDone(true);
     setTimeout(() => {
       onOpenChange(false);
@@ -63,10 +70,11 @@ export function MoneySheet({
   };
 
   const title = mode === "deposit" ? "Add to Stash" : "Withdraw";
+  const availableLabel = balanceLoading ? "…" : fmtUSD(balance);
   const description =
     mode === "deposit"
       ? "Move money in. Starts earning yield immediately."
-      : `Available ${fmtUSD(balance)}`;
+      : `Available ${availableLabel}`;
 
   const options = mode === "deposit" ? depositMethods : withdrawDests;
 

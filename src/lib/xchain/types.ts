@@ -28,3 +28,27 @@ export type XChainSelfPaymentSubmitResult = {
   voiAddress: string;
   voiExecutionAddress: string;
 };
+
+export type VoiUsdcOptInStatus = {
+  assetId: number;
+  voiAddress: string;
+  voiExecutionAddress: string;
+  optedIn: boolean;
+};
+
+export type XChainAssetOptInPrepareResult = {
+  unsignedTxnBase64: string;
+  typedData: SignTypedDataParams;
+  assetId: number;
+  voiAddress: string;
+  voiExecutionAddress: string;
+  network: typeof import("@/lib/voi/constants").VOI_NETWORK;
+};
+
+export type XChainAssetOptInSubmitResult = {
+  txId: string;
+  confirmedRound: number;
+  assetId: number;
+  voiAddress: string;
+  voiExecutionAddress: string;
+};

@@ -20,6 +20,7 @@ import {
 import { XChainAccountSection } from "@/components/XChainAccountSection";
 import { ClientOnly } from "@/components/ClientOnly";
 import { X402DebugSection } from "@/components/X402DebugSection";
+import { VoiUsdcOptInDebugSection } from "@/components/VoiUsdcOptInDebugSection";
 
 export const Route = createFileRoute("/account")({
   head: () => ({
@@ -149,6 +150,7 @@ function AccountPage() {
               display={walletAddress ? truncateAddress(walletAddress) : undefined}
             />
             <ClientOnly>
+              <VoiUsdcOptInDebugSection walletAddress={walletAddress} />
               <X402DebugSection walletAddress={walletAddress} />
             </ClientOnly>
           </div>

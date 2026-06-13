@@ -14,5 +14,8 @@ export const VOI_INDEXER_DEFAULT = {
 
 export const VOI_BLOCK_EXPLORER_TX = "https://block.voi.network/explorer/transaction";
 
+/** Voi mainnet USDC ASA */
+export const VOI_USDC_ASSET_ID = 302190;
+
 /** 1 VOI = 1_000_000 microAlgos */
 export const VOI_MICROALGO = 1_000_000;

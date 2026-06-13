@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import { deriveXChainAddresses } from "@/lib/xchain/derive.server";
 import {
+  getVoiUsdcOptInStatus,
+  prepareXChainUsdcOptIn,
+  submitXChainUsdcOptIn,
+} from "@/lib/xchain/asset-opt-in.server";
+import {
   prepareXChainSelfPayment,
   submitXChainSelfPayment,
 } from "@/lib/xchain/self-payment.server";
@@ -21,6 +26,27 @@ const submitSelfPaymentInput = z.object({
 export const getXChainAddress = createServerFn({ method: "GET" })
   .inputValidator(evmAddressInput)
   .handler(async ({ data }) => deriveXChainAddresses(data.evmAddress));
+
+/** Whether the execution address has opted into Voi mainnet USDC (ASA 302190). */
+export const getVoiUsdcOptInStatusFn = createServerFn({ method: "GET" })
+  .inputValidator(evmAddressInput)
+  .handler(async ({ data }) => getVoiUsdcOptInStatus(data.evmAddress));
+
+/** Build a USDC ASA opt-in txn and EIP-712 typed data for EVM signing. */
+export const prepareXChainUsdcOptInFn = createServerFn({ method: "POST" })
+  .inputValidator(evmAddressInput)
+  .handler(async ({ data }) => prepareXChainUsdcOptIn(data.evmAddress));
+
+/** Attach an EVM EIP-712 signature and submit the USDC opt-in to Voi mainnet. */
+export const submitXChainUsdcOptInFn = createServerFn({ method: "POST" })
+  .inputValidator(submitSelfPaymentInput)
+  .handler(async ({ data }) =>
+    submitXChainUsdcOptIn({
+      evmAddress: data.evmAddress,
+      signature: data.signature,
+      unsignedTxnBase64: data.unsignedTxnBase64,
+    }),
+  );
 
 /** Build a 0 VOI self-payment txn and EIP-712 typed data for EVM signing. */
 export const prepareXChainSelfPaymentFn = createServerFn({ method: "POST" })

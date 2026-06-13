@@ -21,7 +21,7 @@ const depositMethods = [
   },
   {
     id: "external" as const,
-    label: "External wallet",
+    label: "Crypto account",
     sub: "Transfer USDC from MetaMask, Coinbase, etc.",
     icon: Wallet,
   },
@@ -91,7 +91,7 @@ export function MoneySheet({
   const availableLabel = balanceLoading ? "…" : fmtUSD(maxWithdraw);
   const description =
     mode === "deposit"
-      ? "Fund with fiat or an external wallet. Starts earning yield when USDC arrives."
+      ? "Fund with a debit card or crypto account. Starts earning yield when USDC arrives."
       : `Available ${availableLabel}`;
 
   return (

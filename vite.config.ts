@@ -12,4 +12,16 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    optimizeDeps: {
+      // Pre-bundle Privy + wallet SDKs so funding modals don't hit stale dep 504s in dev.
+      include: [
+        "@privy-io/react-auth",
+        "@privy-io/api-types",
+        "@coinbase/wallet-sdk",
+        "@walletconnect/ethereum-provider",
+        "@metamask/sdk",
+      ],
+    },
+  },
 });

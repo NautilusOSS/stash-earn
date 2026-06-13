@@ -16,13 +16,37 @@ import process from "node:process";
 //     and server (analytics IDs, public URLs). Define in .env with the
 //     VITE_ prefix. Never put secrets here — they ship to the browser.
 
+function normalizeEnvValue(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function env(name: string): string | undefined {
+  const fromProcess = normalizeEnvValue(process.env[name]);
+  if (fromProcess) return fromProcess;
+
+  if (name.startsWith("VITE_")) {
+    const viteEnv = import.meta.env as Record<string, string | undefined>;
+    return normalizeEnvValue(viteEnv[name]);
+  }
+
+  return undefined;
+}
+
 export function getServerConfig() {
   return {
     nodeEnv: process.env.NODE_ENV,
     privy: {
-      appId: process.env.VITE_PRIVY_APP_ID ?? process.env.PRIVY_APP_ID,
-      appSecret: process.env.PRIVY_APP_SECRET,
-      vaultId: process.env.PRIVY_VAULT_ID ?? process.env.VITE_PRIVY_VAULT_ID,
+      appId: env("VITE_PRIVY_APP_ID") ?? env("PRIVY_APP_ID"),
+      appSecret: env("PRIVY_APP_SECRET"),
+      vaultId: env("PRIVY_VAULT_ID") ?? env("VITE_PRIVY_VAULT_ID"),
     },
     voi: {
       algodServer: process.env.VOI_ALGOD_SERVER,

@@ -38,6 +38,8 @@ function PrivyConfigProvider({ children }: { children: ReactNode }) {
           theme: "light",
           accentColor: "#3d8b6e",
           logo: undefined,
+          walletChainType: "ethereum-only",
+          walletList: ["metamask", "coinbase_wallet", "wallet_connect", "rainbow"],
         },
         loginMethods: ["email", "passkey", "google", "apple"],
         embeddedWallets: {

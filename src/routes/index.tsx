@@ -6,7 +6,8 @@ import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
-import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
+import { useEarnPosition } from "@/hooks/useEarnPosition";
+import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
@@ -31,18 +32,21 @@ function Home() {
   const { user } = usePrivy();
   const { apy: fallbackApy, transactions } = useStash();
   const walletAddress = getUserWalletAddress(user);
-  const { balance, isLoading: balanceLoading } = useWalletUsdcBalance(walletAddress);
-  const { supplyApyDecimal, supplyApyLabel } = useDorkFiSupplyApy();
+  const { baseBalance, executionBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
+  const { assetsInVault, earnedYield, isLoading: positionLoading } = useEarnPosition(walletAddress);
+  const { userApyDecimal, userApyLabel, configured: earnConfigured } = useEarnVaultDetails();
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
 
   const preferredName = getPreferredName(user) ?? "there";
   const avatar = getUserAvatar(user);
   const greeting = getTimeBasedGreeting();
 
-  const apy = supplyApyDecimal ?? fallbackApy;
-  const apyDisplay = supplyApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
+  const balance = assetsInVault + baseBalance + executionBalance;
+  const balanceLoading = walletLoading || positionLoading;
+  const apy = userApyDecimal ?? fallbackApy;
+  const apyDisplay = userApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
 
-  const annual = balance * apy;
+  const annual = assetsInVault * apy;
   const daily = annual / 365;
 
   const balanceLabel = balanceLoading ? "—" : fmtUSD(balance).replace("$", "");
@@ -73,7 +77,7 @@ function Home() {
       <section className="mt-6 overflow-hidden rounded-[2rem] bg-primary p-6 text-primary-foreground shadow-[0_30px_60px_-30px_rgba(0,0,0,0.35)]">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-[0.18em] text-primary-foreground/70">
-            Available balance
+            Total balance
           </p>
           <span className="inline-flex items-center gap-1 rounded-full bg-positive/20 px-2.5 py-1 text-[11px] font-semibold text-positive">
             <Sparkles className="h-3 w-3" strokeWidth={2.25} />
@@ -90,17 +94,22 @@ function Home() {
         <div className="mt-6 grid grid-cols-2 gap-4 border-t border-primary-foreground/10 pt-5">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/60">
-              Today
+              Earning
             </p>
-            <p className="mt-1 text-base font-semibold text-positive">+{fmtUSD(daily)}</p>
+            <p className="mt-1 text-base font-semibold">{fmtUSD(assetsInVault)}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/60">
-              Earning / year
+              Yield earned
             </p>
-            <p className="mt-1 text-base font-semibold">+{fmtUSD(annual)}</p>
+            <p className="mt-1 text-base font-semibold text-positive">+{fmtUSD(earnedYield)}</p>
           </div>
         </div>
+        {earnConfigured && baseBalance > 0 && (
+          <p className="mt-4 text-xs text-primary-foreground/60">
+            {fmtUSD(baseBalance)} in wallet ready to deposit
+          </p>
+        )}
       </section>
 
       {/* Actions */}
@@ -128,9 +137,13 @@ function Home() {
             <Sparkles className="h-4 w-4" strokeWidth={2} />
           </div>
           <div>
-            <p className="text-[15px] font-medium">You earned {fmtUSD(daily)} today.</p>
+            <p className="text-[15px] font-medium">
+              {assetsInVault > 0
+                ? `You could earn about ${fmtUSD(daily)} today.`
+                : "Deposit USDC to start earning."}
+            </p>
             <p className="text-xs text-muted-foreground">
-              At {apyDisplay} APY, this balance earns about{" "}
+              At {apyDisplay} APY, {fmtUSD(assetsInVault)} earns about{" "}
               {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
             </p>
           </div>

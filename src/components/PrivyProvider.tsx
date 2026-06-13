@@ -1,11 +1,14 @@
 import { PrivyProvider as BasePrivyProvider } from "@privy-io/react-auth";
-import { base } from "viem/chains";
+import { base, baseSepolia } from "viem/chains";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { getBlinkEnvironmentClient } from "@/lib/blink/config";
 import { getPrivyAppId } from "@/lib/privy/constants";
 
 function PrivyConfigProvider({ children }: { children: ReactNode }) {
   const appId = getPrivyAppId();
+  const blinkSandbox = getBlinkEnvironmentClient() === "sandbox";
+  const supportedChains = blinkSandbox ? [base, baseSepolia] : [base];
 
   if (!appId) {
     return (
@@ -48,7 +51,7 @@ function PrivyConfigProvider({ children }: { children: ReactNode }) {
           },
         },
         defaultChain: base,
-        supportedChains: [base],
+        supportedChains,
       }}
     >
       {children}

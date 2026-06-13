@@ -21,6 +21,8 @@ export default defineConfig({
         "@coinbase/wallet-sdk",
         "@walletconnect/ethereum-provider",
         "@metamask/sdk",
+        "@swype-org/deposit",
+        "@swype-org/deposit/react",
       ],
     },
   },

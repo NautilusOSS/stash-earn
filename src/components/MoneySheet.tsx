@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AmountKeypad } from "./AmountKeypad";
+import { useBlinkConfigured } from "@/hooks/useBlinkConfigured";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useEarnWithdraw } from "@/hooks/useEarnWithdraw";
 import { useStashDeposit, type StashDepositMethod } from "@/hooks/useStashDeposit";
 import { fmtUSD } from "@/lib/stash";
-import { CreditCard, Wallet, Check, Loader2 } from "lucide-react";
+import { CreditCard, Wallet, Zap, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+const BlinkDepositPanel = lazy(() =>
+  import("./BlinkDepositPanel").then((m) => ({ default: m.BlinkDepositPanel })),
+);
 
 type Mode = "deposit" | "withdraw";
 
@@ -24,6 +29,12 @@ const depositMethods = [
     label: "Crypto account",
     sub: "Transfer USDC from MetaMask, Coinbase, etc.",
     icon: Wallet,
+  },
+  {
+    id: "blink" as const,
+    label: "Blink",
+    sub: "Deposit USDC with passkey · wallets Blink supports",
+    icon: Zap,
   },
 ] as const;
 
@@ -41,45 +52,41 @@ export function MoneySheet({
   const { configured, isLoading: earnLoading } = useEarnVaultDetails();
   const { assetsInVault, isLoading: positionLoading } = useEarnPosition(walletAddress);
   const { deposit, isSubmitting: isDepositing, error: depositError } = useStashDeposit(walletAddress);
+  const { configured: blinkConfigured } = useBlinkConfigured();
   const { withdraw, isSubmitting: isWithdrawing, error: withdrawError } = useEarnWithdraw(walletAddress);
 
   const [amount, setAmount] = useState("0");
-  const [depositMethod, setDepositMethod] = useState<StashDepositMethod>("fiat");
+  const [depositMethod, setDepositMethod] = useState<StashDepositMethod | "blink">("fiat");
   const [done, setDone] = useState(false);
+  const [blinkError, setBlinkError] = useState<string | null>(null);
 
   const numeric = Number(amount) || 0;
   const maxWithdraw = assetsInVault;
   const balanceLoading = positionLoading;
+  const isBlinkDeposit = mode === "deposit" && depositMethod === "blink";
   const isSubmitting = mode === "deposit" ? isDepositing : isWithdrawing;
-  const submitError = mode === "deposit" ? depositError : withdrawError;
-  const canSubmit =
+  const submitError =
     mode === "deposit"
-      ? numeric > 0 && !isSubmitting
-      : configured &&
-        numeric > 0 &&
-        numeric <= maxWithdraw &&
-        !isSubmitting &&
-        !balanceLoading;
+      ? isBlinkDeposit
+        ? blinkError
+        : depositError
+      : withdrawError;
+  const canSubmitPrivy = numeric > 0 && !isDepositing && depositMethod !== "blink";
+  const canSubmitWithdraw =
+    configured &&
+    numeric > 0 &&
+    numeric <= maxWithdraw &&
+    !isWithdrawing &&
+    !balanceLoading;
 
   const reset = () => {
     setAmount("0");
     setDone(false);
     setDepositMethod("fiat");
+    setBlinkError(null);
   };
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-
-    if (mode === "deposit") {
-      const ok = await deposit(numeric, depositMethod);
-      if (!ok) return;
-      toast.success("Your deposit is in progress.");
-    } else {
-      const action = await withdraw(numeric);
-      if (!action) return;
-      toast.success("Withdrawal sent to your wallet.");
-    }
-
+  const finishSuccess = () => {
     setDone(true);
     setTimeout(() => {
       onOpenChange(false);
@@ -87,16 +94,44 @@ export function MoneySheet({
     }, 1200);
   };
 
+  const handlePrivySubmit = async () => {
+    if (!canSubmitPrivy || depositMethod === "blink") return;
+
+    const ok = await deposit(numeric, depositMethod);
+    if (!ok) return;
+    toast.success("Your deposit is in progress.");
+    finishSuccess();
+  };
+
+  const handleBlinkSuccess = () => {
+    toast.success("Blink deposit complete. Moving USDC into yield when it lands…");
+    finishSuccess();
+  };
+
+  const handleWithdrawSubmit = async () => {
+    if (!canSubmitWithdraw) return;
+
+    const action = await withdraw(numeric);
+    if (!action) return;
+    toast.success("Withdrawal sent to your wallet.");
+    finishSuccess();
+  };
+
   const title = mode === "deposit" ? "Add to Stash" : "Withdraw";
   const availableLabel = balanceLoading ? "…" : fmtUSD(maxWithdraw);
   const description =
     mode === "deposit"
-      ? "Fund with a debit card or crypto account. Starts earning yield when USDC arrives."
+      ? "Debit card, crypto account, or Blink. Starts earning yield when USDC arrives."
       : `Available ${availableLabel}`;
+
+  // Blink mounts its iframe on document.body. Radix modal dialogs call hideOthers()
+  // on siblings, which breaks WebAuthn passkey create/get inside the Blink iframe.
+  const sheetModal = !isBlinkDeposit;
 
   return (
     <Sheet
       open={open}
+      modal={sheetModal}
       onOpenChange={(o) => {
         onOpenChange(o);
         if (!o) setTimeout(reset, 250);
@@ -162,13 +197,18 @@ export function MoneySheet({
                 </p>
                 <div className="overflow-hidden rounded-2xl border border-border bg-card">
                   {depositMethods.map((option, index) => {
+                    if (option.id === "blink" && !blinkConfigured) return null;
+
                     const Icon = option.icon;
                     const active = depositMethod === option.id;
                     return (
                       <button
                         key={option.id}
                         type="button"
-                        onClick={() => setDepositMethod(option.id)}
+                        onClick={() => {
+                          setDepositMethod(option.id);
+                          setBlinkError(null);
+                        }}
                         className={
                           "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors " +
                           (index > 0 ? "border-t border-border " : "") +
@@ -195,23 +235,44 @@ export function MoneySheet({
               </div>
             ) : null}
 
-            <Button
-              size="lg"
-              disabled={!canSubmit}
-              onClick={() => void handleSubmit()}
-              className="mt-6 h-14 w-full rounded-2xl text-base font-semibold"
-            >
-              {isSubmitting ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {mode === "deposit" ? "Starting deposit…" : "Withdrawing…"}
-                </span>
-              ) : mode === "deposit" ? (
-                `Add ${numeric > 0 ? fmtUSD(numeric) : ""}`.trim()
-              ) : (
-                `Withdraw ${numeric > 0 ? fmtUSD(numeric) : ""}`.trim()
-              )}
-            </Button>
+            {mode === "deposit" && isBlinkDeposit ? (
+              <div className="mt-6">
+                <Suspense
+                  fallback={
+                    <div className="flex h-14 items-center justify-center rounded-2xl bg-secondary/40">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                >
+                  <BlinkDepositPanel
+                    walletAddress={walletAddress}
+                    amount={numeric}
+                    onSuccess={handleBlinkSuccess}
+                    onErrorMessage={setBlinkError}
+                  />
+                </Suspense>
+              </div>
+            ) : (
+              <Button
+                size="lg"
+                disabled={mode === "deposit" ? !canSubmitPrivy : !canSubmitWithdraw}
+                onClick={() =>
+                  mode === "deposit" ? void handlePrivySubmit() : void handleWithdrawSubmit()
+                }
+                className="mt-6 h-14 w-full rounded-2xl text-base font-semibold"
+              >
+                {isSubmitting ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {mode === "deposit" ? "Starting deposit…" : "Withdrawing…"}
+                  </span>
+                ) : mode === "deposit" ? (
+                  `Add ${numeric > 0 ? fmtUSD(numeric) : ""}`.trim()
+                ) : (
+                  `Withdraw ${numeric > 0 ? fmtUSD(numeric) : ""}`.trim()
+                )}
+              </Button>
+            )}
           </div>
         )}
       </SheetContent>

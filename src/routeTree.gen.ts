@@ -13,6 +13,7 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiX402SplatRouteImport } from './routes/api/x402/$'
+import { Route as ApiBlinkSignPaymentRouteImport } from './routes/api/blink/sign-payment'
 
 const ActivityRoute = ActivityRouteImport.update({
   id: '/activity',
@@ -34,17 +35,24 @@ const ApiX402SplatRoute = ApiX402SplatRouteImport.update({
   path: '/api/x402/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBlinkSignPaymentRoute = ApiBlinkSignPaymentRouteImport.update({
+  id: '/api/blink/sign-payment',
+  path: '/api/blink/sign-payment',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/blink/sign-payment': typeof ApiBlinkSignPaymentRoute
   '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/blink/sign-payment': typeof ApiBlinkSignPaymentRoute
   '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,33 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/blink/sign-payment': typeof ApiBlinkSignPaymentRoute
   '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/account' | '/activity' | '/api/x402/$'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/activity'
+    | '/api/blink/sign-payment'
+    | '/api/x402/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/account' | '/activity' | '/api/x402/$'
-  id: '__root__' | '/' | '/account' | '/activity' | '/api/x402/$'
+  to: '/' | '/account' | '/activity' | '/api/blink/sign-payment' | '/api/x402/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/activity'
+    | '/api/blink/sign-payment'
+    | '/api/x402/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   ActivityRoute: typeof ActivityRoute
+  ApiBlinkSignPaymentRoute: typeof ApiBlinkSignPaymentRoute
   ApiX402SplatRoute: typeof ApiX402SplatRoute
 }
 
@@ -99,6 +120,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiX402SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/blink/sign-payment': {
+      id: '/api/blink/sign-payment'
+      path: '/api/blink/sign-payment'
+      fullPath: '/api/blink/sign-payment'
+      preLoaderRoute: typeof ApiBlinkSignPaymentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -106,6 +134,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   ActivityRoute: ActivityRoute,
+  ApiBlinkSignPaymentRoute: ApiBlinkSignPaymentRoute,
   ApiX402SplatRoute: ApiX402SplatRoute,
 }
 export const routeTree = rootRouteImport

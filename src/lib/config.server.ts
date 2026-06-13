@@ -24,5 +24,13 @@ export function getServerConfig() {
       appSecret: process.env.PRIVY_APP_SECRET,
       vaultId: process.env.PRIVY_VAULT_ID ?? process.env.VITE_PRIVY_VAULT_ID,
     },
+    voi: {
+      algodServer: process.env.VOI_ALGOD_SERVER,
+      algodPort: process.env.VOI_ALGOD_PORT,
+      algodToken: process.env.VOI_ALGOD_TOKEN,
+      indexerServer: process.env.VOI_INDEXER_SERVER,
+      indexerPort: process.env.VOI_INDEXER_PORT,
+      indexerToken: process.env.VOI_INDEXER_TOKEN,
+    },
   };
 }

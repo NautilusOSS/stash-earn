@@ -17,6 +17,7 @@ import {
   getUserInitials,
   getUserWalletAddress,
 } from "@/lib/privy/user";
+import { XChainAccountSection } from "@/components/XChainAccountSection";
 
 export const Route = createFileRoute("/account")({
   head: () => ({
@@ -112,6 +113,8 @@ function AccountPage() {
           ))}
         </div>
       </section>
+
+      <XChainAccountSection evmAddress={walletAddress} />
 
       {debug ? (
         <section className="mt-6">

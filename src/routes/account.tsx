@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MobileShell } from "@/components/BottomNav";
 import {
-  User,
   Building2,
   ShieldCheck,
   Bell,

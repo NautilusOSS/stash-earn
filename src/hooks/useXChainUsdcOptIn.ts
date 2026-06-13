@@ -1,24 +1,26 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useSignTypedData } from "@privy-io/react-auth";
 import { useCallback, useState } from "react";
 
-import { prepareXChainSelfPaymentFn, submitXChainSelfPaymentFn } from "@/lib/api/xchain.functions";
+import { prepareXChainUsdcOptInFn, submitXChainUsdcOptInFn } from "@/lib/api/xchain.functions";
 import type {
-  XChainSelfPaymentPrepareResult,
-  XChainSelfPaymentSubmitResult,
+  XChainAssetOptInPrepareResult,
+  XChainAssetOptInSubmitResult,
 } from "@/lib/xchain/types";
 import { toPrivyTypedData } from "@/lib/xchain/privy-typed-data";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
-export function useXChainSelfPayment(evmAddress: string | undefined) {
+export function useXChainUsdcOptIn(evmAddress: string | undefined) {
+  const queryClient = useQueryClient();
   const { signTypedData } = useSignTypedData();
   const [isPreparing, setIsPreparing] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [prepareResult, setPrepareResult] = useState<XChainSelfPaymentPrepareResult | null>(null);
-  const [submitResult, setSubmitResult] = useState<XChainSelfPaymentSubmitResult | null>(null);
+  const [prepareResult, setPrepareResult] = useState<XChainAssetOptInPrepareResult | null>(null);
+  const [submitResult, setSubmitResult] = useState<XChainAssetOptInSubmitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sendZeroVoiSelfPayment = useCallback(async () => {
+  const optInToUsdc = useCallback(async () => {
     if (!evmAddress) {
       setError("Connect an EVM wallet first");
       return;
@@ -36,7 +38,7 @@ export function useXChainSelfPayment(evmAddress: string | undefined) {
 
     try {
       setIsPreparing(true);
-      const prepared = await prepareXChainSelfPaymentFn({
+      const prepared = await prepareXChainUsdcOptInFn({
         data: { evmAddress: validation.normalized },
       });
       setPrepareResult(prepared);
@@ -49,7 +51,7 @@ export function useXChainSelfPayment(evmAddress: string | undefined) {
 
       setIsSigning(false);
       setIsSubmitting(true);
-      const submitted = await submitXChainSelfPaymentFn({
+      const submitted = await submitXChainUsdcOptInFn({
         data: {
           evmAddress: validation.normalized,
           signature,
@@ -57,17 +59,19 @@ export function useXChainSelfPayment(evmAddress: string | undefined) {
         },
       });
       setSubmitResult(submitted);
+      await queryClient.invalidateQueries({ queryKey: ["xchain-execution-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["wallet-usdc-balance"] });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Self-payment failed");
+      setError(err instanceof Error ? err.message : "USDC opt-in failed");
     } finally {
       setIsPreparing(false);
       setIsSigning(false);
       setIsSubmitting(false);
     }
-  }, [evmAddress, signTypedData]);
+  }, [evmAddress, signTypedData, queryClient]);
 
   return {
-    sendZeroVoiSelfPayment,
+    optInToUsdc,
     isPreparing,
     isSigning,
     isSubmitting,

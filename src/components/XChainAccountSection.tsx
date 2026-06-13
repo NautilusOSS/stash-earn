@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { useXChainAddress } from "@/hooks/useXChainAddress";
 import { useXChainSelfPayment } from "@/hooks/useXChainSelfPayment";
+import { DorkFiUsdcDepositSection } from "@/components/DorkFiUsdcDepositSection";
 import { truncateAddress } from "@/lib/privy/constants";
 import { VOI_BLOCK_EXPLORER_TX } from "@/lib/voi/constants";
 
@@ -145,6 +146,8 @@ export function XChainAccountSection({ evmAddress }: XChainAccountSectionProps) 
             </div>
           </div>
         ) : null}
+
+        <DorkFiUsdcDepositSection evmAddress={evmAddress} />
       </div>
     </section>
   );

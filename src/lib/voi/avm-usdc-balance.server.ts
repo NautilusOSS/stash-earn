@@ -17,13 +17,33 @@ function readAssetHoldingAmount(info: AccountAssetInfo): bigint {
   return BigInt(raw);
 }
 
-/** USDC balance on a Voi AVM account (ASA 302190). Returns 0 if not opted in. */
-export async function getAvmUsdcBalance(avmAddress: string): Promise<number> {
+export type AvmUsdcHolding = {
+  balance: number;
+  /** Exact human-readable amount for display (from on-chain atomic units). */
+  amount: string;
+  /** USDC base units (micro-USDC) for lending deposit calls. */
+  amountAtomic: string;
+};
+
+/** USDC holding on ASA 302190. Returns null if not opted in. */
+export async function getAvmUsdcHolding(avmAddress: string): Promise<AvmUsdcHolding | null> {
   const algod = getVoiAlgodClient();
   try {
     const info = await algod.accountAssetInformation(avmAddress, VOI_USDC_ASSET_ID).do();
-    return Number(formatUnits(readAssetHoldingAmount(info), VOI_USDC_DECIMALS));
+    const atomic = readAssetHoldingAmount(info);
+    const amount = formatUnits(atomic, VOI_USDC_DECIMALS);
+    return {
+      balance: Number(amount),
+      amount,
+      amountAtomic: atomic.toString(),
+    };
   } catch {
-    return 0;
+    return null;
   }
+}
+
+/** USDC balance on a Voi AVM account (ASA 302190). Returns 0 if not opted in. */
+export async function getAvmUsdcBalance(avmAddress: string): Promise<number> {
+  const holding = await getAvmUsdcHolding(avmAddress);
+  return holding?.balance ?? 0;
 }

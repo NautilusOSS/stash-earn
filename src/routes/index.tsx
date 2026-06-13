@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
+import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { useStash, fmtUSD } from "@/lib/stash";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
 import { getUserAvatar } from "@/lib/privy/user";
@@ -27,12 +28,16 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { user } = usePrivy();
-  const { balance, apy, transactions } = useStash();
+  const { balance, apy: fallbackApy, transactions } = useStash();
+  const { supplyApyDecimal, supplyApyLabel } = useDorkFiSupplyApy();
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
 
   const preferredName = getPreferredName(user) ?? "there";
   const avatar = getUserAvatar(user);
   const greeting = getTimeBasedGreeting();
+
+  const apy = supplyApyDecimal ?? fallbackApy;
+  const apyDisplay = supplyApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
 
   const annual = balance * apy;
   const daily = annual / 365;
@@ -66,7 +71,7 @@ function Home() {
           </p>
           <span className="inline-flex items-center gap-1 rounded-full bg-positive/20 px-2.5 py-1 text-[11px] font-semibold text-positive">
             <Sparkles className="h-3 w-3" strokeWidth={2.25} />
-            {(apy * 100).toFixed(2)}% APY
+            {apyDisplay} APY
           </span>
         </div>
 
@@ -119,7 +124,7 @@ function Home() {
           <div>
             <p className="text-[15px] font-medium">You earned {fmtUSD(daily)} today.</p>
             <p className="text-xs text-muted-foreground">
-              At {(apy * 100).toFixed(2)}% APY, this balance earns about{" "}
+              At {apyDisplay} APY, this balance earns about{" "}
               {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
             </p>
           </div>

@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowDownToLine, ArrowUpFromLine, Sparkles, ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { useStash, fmtUSD } from "@/lib/stash";
+import { getUserDisplayName, getUserInitials } from "@/lib/privy/user";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,8 +22,12 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  const { user } = usePrivy();
   const { balance, apy, transactions } = useStash();
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
+
+  const firstName = getUserDisplayName(user).split(/\s+/)[0] ?? "there";
+  const initials = getUserInitials(user);
 
   const annual = balance * apy;
   const daily = annual / 365;
@@ -34,13 +40,13 @@ function Home() {
       <header className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Cash Stash</p>
-          <h1 className="mt-0.5 text-base font-medium">Good morning, Alex</h1>
+          <h1 className="mt-0.5 text-base font-medium">Good morning, {firstName}</h1>
         </div>
         <Link
           to="/account"
           className="grid h-10 w-10 place-items-center rounded-full bg-secondary text-sm font-semibold text-foreground"
         >
-          A
+          {initials}
         </Link>
       </header>
 

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Home, Receipt, User } from "lucide-react";
+import { Toaster } from "@/components/ui/sonner";
 
 const tabs = [
   { to: "/", label: "Home", icon: Home },
@@ -35,6 +36,7 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
         {children}
       </div>
       <BottomNav />
+      <Toaster position="top-center" />
     </div>
   );
 }

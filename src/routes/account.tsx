@@ -4,14 +4,18 @@ import { MobileShell } from "@/components/BottomNav";
 import { ProfileEditSheet } from "@/components/ProfileEditSheet";
 import { UserCircle, ShieldCheck, Bell, LifeBuoy, ChevronRight, LogOut } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
+import { isDebugMode } from "@/lib/debug";
 import { getPreferredName } from "@/lib/privy/profile";
+import { truncateAddress } from "@/lib/privy/constants";
 import {
   getLoginMethodLabel,
   getUserAvatar,
   getUserDisplayName,
   getUserEmail,
   getUserInitials,
+  getUserWalletAddress,
 } from "@/lib/privy/user";
 
 export const Route = createFileRoute("/account")({
@@ -42,6 +46,8 @@ function AccountPage() {
   const email = getUserEmail(user);
   const initials = getUserInitials(user);
   const loginMethod = getLoginMethodLabel(user);
+  const walletAddress = getUserWalletAddress(user);
+  const debug = isDebugMode();
 
   const settingsItems: Array<{
     icon: typeof UserCircle;
@@ -107,6 +113,20 @@ function AccountPage() {
         </div>
       </section>
 
+      {debug ? (
+        <section className="mt-6">
+          <h2 className="px-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">Debug</h2>
+          <div className="mt-2 divide-y divide-border rounded-2xl border border-dashed border-border bg-card">
+            <DebugField label="Privy ID" value={user?.id} />
+            <DebugField
+              label="Wallet"
+              value={walletAddress}
+              display={walletAddress ? truncateAddress(walletAddress) : undefined}
+            />
+          </div>
+        </section>
+      ) : null}
+
       <button
         type="button"
         onClick={logout}
@@ -122,5 +142,37 @@ function AccountPage() {
 
       <ProfileEditSheet open={profileOpen} onOpenChange={setProfileOpen} />
     </MobileShell>
+  );
+}
+
+function DebugField({
+  label,
+  value,
+  display,
+}: {
+  label: string;
+  value: string | undefined;
+  display?: string;
+}) {
+  const copy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Could not copy ${label.toLowerCase()}`);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      disabled={!value}
+      className="flex w-full flex-col gap-1 px-4 py-3.5 text-left disabled:opacity-50"
+    >
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="break-all font-mono text-[13px]">{display ?? value ?? "—"}</p>
+    </button>
   );
 }

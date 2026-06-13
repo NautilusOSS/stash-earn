@@ -48,3 +48,21 @@ export function getLoginMethodLabel(user: User | null | undefined): string {
   if (user.wallet) return "Wallet";
   return "Privy";
 }
+
+export function getUserWalletAddress(user: User | null | undefined): string | undefined {
+  if (!user) return undefined;
+
+  const embedded = user.linkedAccounts.find(
+    (account) =>
+      account.type === "wallet" &&
+      (account.walletClientType === "privy" || account.walletClientType === "privy-v2"),
+  );
+  if (embedded && "address" in embedded) return embedded.address;
+
+  if (user.wallet?.address) return user.wallet.address;
+
+  const wallet = user.linkedAccounts.find((account) => account.type === "wallet");
+  if (wallet && "address" in wallet) return wallet.address;
+
+  return undefined;
+}

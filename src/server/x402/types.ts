@@ -84,6 +84,9 @@ export interface SettledPayment {
   network: string;
   transaction: string;
   settledAt: string;
+  voiUsdcRecipient?: string;
+  voiUsdcTransfer?: string;
+  voiUsdcTransferError?: string;
 }
 
 export interface SettleEvmResult {

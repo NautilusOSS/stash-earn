@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 
 import { MisconfiguredServerError } from "../x402/config";
+import type { VoiUsdcDistributionResult } from "../x402/distribute-voi-usdc.server";
 import { jsonError, X402_ERRORS } from "../x402/errors";
 import { createPaymentGate } from "../x402/middleware";
 import { buildPaymentQuote, encodePaymentRequired } from "../x402/quote";
@@ -16,7 +17,9 @@ const API_PREFIX = "/api/x402";
  * requirements and public addresses only — never EVM_PRIVATE_KEY or ALGORAND_MNEMONIC.
  */
 export function createX402Router(): Hono {
-  const app = new Hono();
+  const app = new Hono<{
+    Variables: { voiUsdcDistribution?: VoiUsdcDistributionResult };
+  }>();
 
   app.onError((error, c) => {
     console.error("[x402]", error);
@@ -62,13 +65,27 @@ export function createX402Router(): Hono {
     }),
   );
 
-  app.get(`${API_PREFIX}/protected`, (c) =>
-    c.json({
+  app.get(`${API_PREFIX}/protected`, (c) => {
+    const voi = c.get("voiUsdcDistribution");
+    return c.json({
       resource: "protected",
       message: "Access granted after USDC payment.",
       timestamp: new Date().toISOString(),
-    }),
-  );
+      voiUsdc: voi?.txId
+        ? {
+            recipient: voi.recipientAddress,
+            amountAtomic: voi.amountAtomic,
+            txId: voi.txId,
+          }
+        : voi
+          ? {
+              recipient: voi.recipientAddress,
+              skipped: voi.skippedReason,
+              error: voi.error,
+            }
+          : undefined,
+    });
+  });
 
   return app;
 }

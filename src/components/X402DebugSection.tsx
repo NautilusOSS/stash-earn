@@ -44,6 +44,16 @@ export function X402DebugSection({ walletAddress }: X402DebugSectionProps) {
           <div>
             <p className="font-medium">Payment succeeded</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{result.message}</p>
+            {result.voiUsdc?.txId ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Voi USDC sent · tx {result.voiUsdc.txId.slice(0, 10)}…
+              </p>
+            ) : null}
+            {result.voiUsdc?.skipped || result.voiUsdc?.error ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Voi USDC: {result.voiUsdc.skipped ?? result.voiUsdc.error}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}

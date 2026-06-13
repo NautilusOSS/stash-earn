@@ -7,8 +7,10 @@ Server-only USDC payment gateway for Cash Stash using the [x402](https://www.x40
 | Layer | Responsibility |
 | --- | --- |
 | **Browser / wallet** | Signs payment authorization (EIP-3009 USDC `transferWithAuthorization`) |
-| **Server** | Returns payment requirements, verifies signature, settles on-chain, serves protected content |
+| **Server** | Returns payment requirements, verifies signature, settles on Base, mirrors USDC to payer on Voi, serves protected content |
 | **Never in UI** | `EVM_PRIVATE_KEY`, `ALGORAND_MNEMONIC`, facilitator signing keys |
+
+After a successful Base settlement, the server sends the same USDC amount (ASA `302190`) from the platform AVM account (`ALGORAND_MNEMONIC`) to the payer's Voi xChain **execution** address. Both accounts must be opted into USDC; the payer must opt in on the execution address before receiving.
 
 Private keys are loaded only from server env vars in `src/server/x402/`. No `VITE_` prefix on secrets.
 

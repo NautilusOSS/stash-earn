@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { encodePaymentResponseHeader } from "@x402/core/http";
 
 import { getX402Config, MisconfiguredServerError } from "./config";
+import { distributeVoiUsdcToPayer } from "./distribute-voi-usdc.server";
 import { jsonError, paymentRequired, X402_ERRORS } from "./errors";
 import { buildProtectedRequirements } from "./quote";
 import { getReplayStore } from "./replay-store";
@@ -80,6 +81,17 @@ export function createPaymentGate(options: ProtectedRouteOptions): MiddlewareHan
         });
       }
 
+      const payerEvm =
+        settleResult.settleResponse.payer ?? verification.payer ?? undefined;
+
+      const voiDistribution =
+        payerEvm != null
+          ? await distributeVoiUsdcToPayer({
+              payerEvmAddress: payerEvm,
+              amountAtomic: requirement.amount,
+            })
+          : { attempted: false, skippedReason: "No payer EVM address on settlement" };
+
       await replayStore.record({
         paymentId,
         resourceId: options.path,
@@ -90,7 +102,15 @@ export function createPaymentGate(options: ProtectedRouteOptions): MiddlewareHan
         network: requirement.network,
         transaction: settleResult.settleResponse.transaction,
         settledAt: new Date().toISOString(),
+        voiUsdcRecipient: voiDistribution.recipientAddress,
+        voiUsdcTransfer: voiDistribution.txId,
+        voiUsdcTransferError: voiDistribution.error ?? voiDistribution.skippedReason,
       });
+
+      if (voiDistribution.txId) {
+        c.header("voi-usdc-transfer", voiDistribution.txId);
+      }
+      c.set("voiUsdcDistribution", voiDistribution);
 
       c.header("payment-response", encodePaymentResponseHeader(settleResult.settleResponse));
       await next();

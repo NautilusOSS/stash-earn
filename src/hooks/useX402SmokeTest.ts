@@ -13,6 +13,13 @@ export type X402SmokeTestResult = {
   resource: string;
   message: string;
   timestamp?: string;
+  voiUsdc?: {
+    recipient?: string;
+    amountAtomic?: string;
+    txId?: string;
+    skipped?: string;
+    error?: string;
+  };
 };
 
 export function useX402SmokeTest(walletAddress: string | undefined) {

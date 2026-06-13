@@ -11,6 +11,7 @@ import {
   prepareXChainSelfPayment,
   submitXChainSelfPayment,
 } from "@/lib/xchain/self-payment.server";
+import { getAvmUsdcBalance } from "@/lib/voi/avm-usdc-balance.server";
 
 const evmAddressInput = z.object({
   evmAddress: z.string().min(1),
@@ -26,6 +27,18 @@ const submitSelfPaymentInput = z.object({
 export const getXChainAddress = createServerFn({ method: "GET" })
   .inputValidator(evmAddressInput)
   .handler(async ({ data }) => deriveXChainAddresses(data.evmAddress));
+
+/** USDC balance on the payer's Voi xChain execution address (ASA 302190). */
+export const getXChainExecutionUsdcBalance = createServerFn({ method: "GET" })
+  .inputValidator(evmAddressInput)
+  .handler(async ({ data }) => {
+    const addresses = await deriveXChainAddresses(data.evmAddress);
+    const balance = await getAvmUsdcBalance(addresses.voiExecutionAddress);
+    return {
+      voiExecutionAddress: addresses.voiExecutionAddress,
+      balance,
+    };
+  });
 
 /** Whether the execution address has opted into Voi mainnet USDC (ASA 302190). */
 export const getVoiUsdcOptInStatusFn = createServerFn({ method: "GET" })

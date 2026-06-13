@@ -1,5 +1,7 @@
 import type { User } from "@privy-io/react-auth";
 
+import { getPreferredName, getUserProfile } from "./profile";
+
 export function getUserEmail(user: User | null | undefined): string | undefined {
   if (!user) return undefined;
   if (user.email?.address) return user.email.address;
@@ -11,6 +13,9 @@ export function getUserEmail(user: User | null | undefined): string | undefined 
 export function getUserDisplayName(user: User | null | undefined): string {
   if (!user) return "Guest";
 
+  const preferredName = getPreferredName(user);
+  if (preferredName) return preferredName;
+
   if (user.google?.name) return user.google.name;
 
   const email = getUserEmail(user);
@@ -20,6 +25,10 @@ export function getUserDisplayName(user: User | null | undefined): string {
   }
 
   return "Stasher";
+}
+
+export function getUserAvatar(user: User | null | undefined): string | undefined {
+  return getUserProfile(user).avatar;
 }
 
 export function getUserInitials(user: User | null | undefined): string {

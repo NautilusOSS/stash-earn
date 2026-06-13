@@ -10,7 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { AuthGate } from "../components/AuthGate";
+import { OnboardingGate } from "../components/OnboardingGate";
 import { AppPrivyProvider } from "../components/PrivyProvider";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -127,10 +127,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppPrivyProvider>
-        <AuthGate>
+        <OnboardingGate>
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
-        </AuthGate>
+        </OnboardingGate>
       </AppPrivyProvider>
     </QueryClientProvider>
   );

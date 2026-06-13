@@ -7,13 +7,17 @@ import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { useStash, fmtUSD } from "@/lib/stash";
-import { getUserDisplayName, getUserInitials } from "@/lib/privy/user";
+import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
+import { getUserAvatar } from "@/lib/privy/user";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Cash Stash — Earn yield on your cash" },
-      { name: "description", content: "Your stash, earning every day. Simple deposits, simple withdrawals." },
+      {
+        name: "description",
+        content: "Your stash, earning every day. Simple deposits, simple withdrawals.",
+      },
       { property: "og:title", content: "Cash Stash" },
       { property: "og:description", content: "A simple place to keep cash and earn yield." },
     ],
@@ -26,8 +30,9 @@ function Home() {
   const { balance, apy, transactions } = useStash();
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
 
-  const firstName = getUserDisplayName(user).split(/\s+/)[0] ?? "there";
-  const initials = getUserInitials(user);
+  const preferredName = getPreferredName(user) ?? "there";
+  const avatar = getUserAvatar(user);
+  const greeting = getTimeBasedGreeting();
 
   const annual = balance * apy;
   const daily = annual / 365;
@@ -40,20 +45,25 @@ function Home() {
       <header className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Cash Stash</p>
-          <h1 className="mt-0.5 text-base font-medium">Good morning, {firstName}</h1>
+          <h1 className="mt-0.5 text-base font-medium">
+            {avatar ? <span className="mr-1.5">{avatar}</span> : null}
+            {greeting}, {preferredName}
+          </h1>
         </div>
         <Link
           to="/account"
           className="grid h-10 w-10 place-items-center rounded-full bg-secondary text-sm font-semibold text-foreground"
         >
-          {initials}
+          {avatar ?? preferredName.slice(0, 2).toUpperCase()}
         </Link>
       </header>
 
       {/* Hero card */}
       <section className="mt-6 overflow-hidden rounded-[2rem] bg-primary p-6 text-primary-foreground shadow-[0_30px_60px_-30px_rgba(0,0,0,0.35)]">
         <div className="flex items-center justify-between">
-          <p className="text-xs uppercase tracking-[0.18em] text-primary-foreground/70">Available balance</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-primary-foreground/70">
+            Available balance
+          </p>
           <span className="inline-flex items-center gap-1 rounded-full bg-positive/20 px-2.5 py-1 text-[11px] font-semibold text-positive">
             <Sparkles className="h-3 w-3" strokeWidth={2.25} />
             {(apy * 100).toFixed(2)}% APY
@@ -109,7 +119,8 @@ function Home() {
           <div>
             <p className="text-[15px] font-medium">You earned {fmtUSD(daily)} today.</p>
             <p className="text-xs text-muted-foreground">
-              At {(apy * 100).toFixed(2)}% APY, this balance earns about {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
+              At {(apy * 100).toFixed(2)}% APY, this balance earns about{" "}
+              {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
             </p>
           </div>
         </div>

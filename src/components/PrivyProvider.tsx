@@ -39,7 +39,7 @@ function PrivyConfigProvider({ children }: { children: ReactNode }) {
           accentColor: "#3d8b6e",
           logo: undefined,
         },
-        loginMethods: ["email", "google", "apple", "wallet"],
+        loginMethods: ["email", "passkey", "google", "apple"],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",

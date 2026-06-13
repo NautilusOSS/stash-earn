@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiX402SplatRouteImport } from './routes/api/x402/$'
 
 const ActivityRoute = ActivityRouteImport.update({
   id: '/activity',
@@ -28,35 +29,44 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiX402SplatRoute = ApiX402SplatRouteImport.update({
+  id: '/api/x402/$',
+  path: '/api/x402/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/api/x402/$': typeof ApiX402SplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/account' | '/activity'
+  fullPaths: '/' | '/account' | '/activity' | '/api/x402/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/account' | '/activity'
-  id: '__root__' | '/' | '/account' | '/activity'
+  to: '/' | '/account' | '/activity' | '/api/x402/$'
+  id: '__root__' | '/' | '/account' | '/activity' | '/api/x402/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   ActivityRoute: typeof ActivityRoute
+  ApiX402SplatRoute: typeof ApiX402SplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/x402/$': {
+      id: '/api/x402/$'
+      path: '/api/x402/$'
+      fullPath: '/api/x402/$'
+      preLoaderRoute: typeof ApiX402SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   ActivityRoute: ActivityRoute,
+  ApiX402SplatRoute: ApiX402SplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -14,7 +14,11 @@ export function getPrivyClient(): PrivyClient {
       throw new Error("Privy is not configured. Set VITE_PRIVY_APP_ID and PRIVY_APP_SECRET.");
     }
 
-    client = new PrivyClient(appId, appSecret);
+    client = new PrivyClient(appId, appSecret, {
+      walletApi: config.privy.authorizationPrivateKey
+        ? { authorizationPrivateKey: config.privy.authorizationPrivateKey }
+        : undefined,
+    });
   }
 
   return client;

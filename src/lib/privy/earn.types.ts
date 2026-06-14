@@ -30,7 +30,12 @@ export type EarnPosition = {
   earnedYield: number;
 };
 
-export type EarnActionStatus = "pending" | "succeeded" | "failed" | "rejected";
+export type EarnActionStatus =
+  | "pending"
+  | "created"
+  | "succeeded"
+  | "failed"
+  | "rejected";
 
 export type EarnActionType = "earn_deposit" | "earn_withdraw";
 
@@ -57,4 +62,28 @@ export type EarnDepositResult = {
 
 export type EarnWithdrawResult = {
   action: EarnAction;
+};
+
+export type WalletActionStatus =
+  | "pending"
+  | "created"
+  | "succeeded"
+  | "failed"
+  | "rejected";
+
+export type WalletAction = {
+  id: string;
+  walletId: string;
+  type: string;
+  status: WalletActionStatus;
+  createdAt: string;
+  destinationAddress: string | null;
+  sourceAmount: string | null;
+  sourceChain: string | null;
+};
+
+export type StashWithdrawResult = {
+  withdrawAction: EarnAction;
+  transferAction: WalletAction;
+  destinationAddress: `0x${string}`;
 };

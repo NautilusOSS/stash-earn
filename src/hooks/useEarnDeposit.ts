@@ -2,15 +2,17 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
-import { earnDepositFn } from "@/lib/api/earn.functions";
+import { earnDepositFn, prepareEarnDepositFn } from "@/lib/api/earn.functions";
 import { usdcToAtomic } from "@/lib/privy/earn-amount";
 import type { EarnAction } from "@/lib/privy/earn.types";
 import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
 export function useEarnDeposit(walletAddress: string | undefined) {
   const { getAccessToken } = usePrivy();
+  const { signWalletAction } = usePrivyWalletActionSigner();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastAction, setLastAction] = useState<EarnAction | null>(null);
@@ -45,11 +47,23 @@ export function useEarnDeposit(walletAddress: string | undefined) {
       setIsSubmitting(true);
 
       try {
+        const rawAmount = usdcToAtomic(amount);
+        const prepared = (await prepareEarnDepositFn({
+          data: {
+            accessToken,
+            evmAddress: validation.normalized,
+            rawAmount,
+          },
+        })) as { path: string; body: Record<string, unknown> };
+        const clientAuth = await signWalletAction(prepared.path, prepared.body);
+
         const { action } = await earnDepositFn({
           data: {
             accessToken,
             evmAddress: validation.normalized,
-            rawAmount: usdcToAtomic(amount),
+            rawAmount,
+            clientAuth,
+            signedBody: prepared.body,
           },
         });
 
@@ -77,7 +91,7 @@ export function useEarnDeposit(walletAddress: string | undefined) {
         setIsSubmitting(false);
       }
     },
-    [walletAddress, getAccessToken, queryClient],
+    [walletAddress, getAccessToken, queryClient, signWalletAction],
   );
 
   return { deposit, isSubmitting, lastAction, error };

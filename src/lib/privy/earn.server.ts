@@ -4,14 +4,19 @@ import { getServerConfig } from "../config.server";
 import { fetchWalletUsdcBalance } from "./usdcBalance";
 import type {
   EarnAction,
+  EarnActionStatus,
   EarnDepositResult,
   EarnPosition,
   EarnVaultDetails,
   EarnWithdrawResult,
 } from "./earn.types";
+import {
+  privyApiGet,
+  privyWalletAction,
+  type PrivyAuthorizationContext,
+} from "./privy-api.server";
 import { resolveEmbeddedWalletId, verifyPrivyAccessToken } from "./session.server";
-
-const PRIVY_API_BASE = "https://api.privy.io/api/v1";
+import type { PrivyWalletActionAuth } from "./wallet-action-auth";
 
 function getVaultId(): string {
   const vaultId = getServerConfig().privy.vaultId;
@@ -21,42 +26,6 @@ function getVaultId(): string {
     );
   }
   return vaultId;
-}
-
-function getPrivyCredentials() {
-  const config = getServerConfig();
-  const appId = config.privy.appId;
-  const appSecret = config.privy.appSecret;
-  if (!appId || !appSecret) {
-    throw new Error("Privy is not configured. Set VITE_PRIVY_APP_ID and PRIVY_APP_SECRET.");
-  }
-  return { appId, appSecret };
-}
-
-async function privyApi<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const { appId, appSecret } = getPrivyCredentials();
-  const credentials = Buffer.from(`${appId}:${appSecret}`).toString("base64");
-
-  const response = await fetch(`${PRIVY_API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "privy-app-id": appId,
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Privy API ${response.status}: ${body}`);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
 }
 
 function atomicToNumber(raw: string, decimals: number): number {
@@ -143,7 +112,7 @@ export function isEarnConfigured(): boolean {
 export async function getEarnVaultDetails(): Promise<EarnVaultDetails | null> {
   if (!isEarnConfigured()) return null;
   const vaultId = getVaultId();
-  const raw = await privyApi<Record<string, unknown>>(
+  const raw = await privyApiGet<Record<string, unknown>>(
     `/earn/ethereum/vaults/${encodeURIComponent(vaultId)}`,
   );
   return mapVaultDetails(raw);
@@ -159,7 +128,7 @@ export async function getEarnPositionForUser(
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
   const vaultId = getVaultId();
 
-  const raw = await privyApi<Record<string, unknown>>(
+  const raw = await privyApiGet<Record<string, unknown>>(
     `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/vaults?vault_id=${encodeURIComponent(vaultId)}`,
   );
   return mapPosition(raw);
@@ -169,6 +138,9 @@ export async function depositToEarnVault(
   accessToken: string,
   evmAddress: string,
   rawAmount: string,
+  authCtx?: PrivyAuthorizationContext,
+  clientAuth?: PrivyWalletActionAuth,
+  signedBody?: Record<string, unknown>,
 ): Promise<EarnDepositResult> {
   const amount = BigInt(rawAmount);
   if (amount <= 0) {
@@ -185,12 +157,12 @@ export async function depositToEarnVault(
     throw new Error("Insufficient USDC balance in your wallet.");
   }
 
-  const raw = await privyApi<Record<string, unknown>>(
+  const raw = await privyWalletAction<Record<string, unknown>>(
     `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/deposit`,
-    {
-      method: "POST",
-      body: JSON.stringify({ vault_id: vaultId, raw_amount: rawAmount }),
-    },
+    accessToken,
+    signedBody ?? { vault_id: vaultId, raw_amount: rawAmount },
+    authCtx,
+    clientAuth,
   );
 
   return { action: mapAction(raw) };
@@ -200,6 +172,9 @@ export async function withdrawFromEarnVault(
   accessToken: string,
   evmAddress: string,
   rawAmount: string,
+  authCtx?: PrivyAuthorizationContext,
+  clientAuth?: PrivyWalletActionAuth,
+  signedBody?: Record<string, unknown>,
 ): Promise<EarnWithdrawResult> {
   const amount = BigInt(rawAmount);
   if (amount <= 0) {
@@ -220,25 +195,89 @@ export async function withdrawFromEarnVault(
     throw new Error("Withdrawal amount exceeds your vault balance.");
   }
 
-  const raw = await privyApi<Record<string, unknown>>(
+  const vaultDetails = await getEarnVaultDetails();
+  if (vaultDetails?.availableLiquidityUsd != null) {
+    const withdrawUsd = atomicToNumber(rawAmount, position.asset.decimals);
+    if (withdrawUsd > vaultDetails.availableLiquidityUsd) {
+      throw new Error(
+        "Vault liquidity is temporarily limited. Try a smaller amount or try again later.",
+      );
+    }
+  }
+
+  const raw = await privyWalletAction<Record<string, unknown>>(
     `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/withdraw`,
-    {
-      method: "POST",
-      body: JSON.stringify({ vault_id: vaultId, raw_amount: rawAmount }),
-    },
+    accessToken,
+    signedBody ?? { vault_id: vaultId, raw_amount: rawAmount },
+    authCtx,
+    clientAuth,
   );
 
   return { action: mapAction(raw) };
 }
 
-export async function getEarnAction(actionId: string): Promise<EarnAction> {
-  const raw = await privyApi<Record<string, unknown>>(
-    `/wallet_actions/${encodeURIComponent(actionId)}`,
-  );
+/** Return the wallet API payload the client must sign before depositing. */
+export async function prepareEarnDeposit(
+  accessToken: string,
+  evmAddress: string,
+  rawAmount: string,
+): Promise<{ path: string; body: Record<string, unknown> }> {
+  const amount = BigInt(rawAmount);
+  if (amount <= 0) {
+    throw new Error("Deposit amount must be greater than zero.");
+  }
+
+  const { userId } = await verifyPrivyAccessToken(accessToken);
+  const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
+  const vaultId = getVaultId();
+
+  return {
+    path: `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/deposit`,
+    body: { vault_id: vaultId, raw_amount: rawAmount },
+  };
+}
+
+function walletActionPath(walletId: string, actionId: string, includeSteps = false): string {
+  const base = `/wallets/${encodeURIComponent(walletId)}/actions/${encodeURIComponent(actionId)}`;
+  return includeSteps ? `${base}?include=steps` : base;
+}
+
+export function walletActionFailureMessage(
+  raw: Record<string, unknown>,
+  fallback: string,
+): string {
+  const reason = raw.failure_reason;
+  if (reason && typeof reason === "object" && "message" in reason) {
+    const message = (reason as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
+}
+
+export async function getWalletActionRaw(
+  walletId: string,
+  actionId: string,
+  includeSteps = false,
+): Promise<Record<string, unknown>> {
+  return privyApiGet<Record<string, unknown>>(walletActionPath(walletId, actionId, includeSteps));
+}
+
+export async function getEarnAction(
+  walletId: string,
+  actionId: string,
+): Promise<EarnAction> {
+  const raw = await getWalletActionRaw(walletId, actionId);
   return mapAction(raw);
 }
 
+function isWalletActionInProgress(status: string): boolean {
+  return status === "pending" || status === "created";
+}
+
 export async function pollEarnAction(
+  walletId: string,
   actionId: string,
   options: { intervalMs?: number; timeoutMs?: number } = {},
 ): Promise<EarnAction> {
@@ -247,12 +286,42 @@ export async function pollEarnAction(
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const action = await getEarnAction(actionId);
-    if (action.status !== "pending") {
+    const action = await getEarnAction(walletId, actionId);
+    if (!isWalletActionInProgress(action.status)) {
       return action;
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 
   throw new Error("Earn action timed out. Check your wallet activity and try again.");
+}
+
+export async function pollWalletAction(
+  walletId: string,
+  actionId: string,
+  options: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<Record<string, unknown>> {
+  const intervalMs = options.intervalMs ?? 2000;
+  const timeoutMs = options.timeoutMs ?? 120000;
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const raw = await getWalletActionRaw(walletId, actionId);
+    const status = raw.status as EarnActionStatus;
+    if (!isWalletActionInProgress(status)) {
+      return raw;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error("Wallet action timed out. Check your activity and try again.");
+}
+
+export async function pollWalletActionStatus(
+  walletId: string,
+  actionId: string,
+  options: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<EarnActionStatus> {
+  const raw = await pollWalletAction(walletId, actionId, options);
+  return raw.status as EarnActionStatus;
 }

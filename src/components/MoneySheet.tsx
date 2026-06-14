@@ -1,13 +1,17 @@
 import { lazy, Suspense, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AmountKeypad } from "./AmountKeypad";
 import { useBlinkConfigured } from "@/hooks/useBlinkConfigured";
-import { useEarnPosition } from "@/hooks/useEarnPosition";
-import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
+import { useWithdrawableBalance } from "@/hooks/useWithdrawableBalance";
 import { useEarnWithdraw } from "@/hooks/useEarnWithdraw";
 import { useStashDeposit, type StashDepositMethod } from "@/hooks/useStashDeposit";
 import { fmtUSD } from "@/lib/stash";
+import { atomicToUsdc } from "@/lib/privy/earn-amount";
+import { truncateAddress } from "@/lib/privy/constants";
+import { getWithdrawAddress } from "@/lib/privy/profile";
+import { usePrivy } from "@privy-io/react-auth";
 import { CreditCard, Wallet, Zap, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,20 +53,35 @@ export function MoneySheet({
   onOpenChange: (o: boolean) => void;
   walletAddress: string | undefined;
 }) {
-  const { configured, isLoading: earnLoading } = useEarnVaultDetails();
-  const { assetsInVault, isLoading: positionLoading } = useEarnPosition(walletAddress);
+  const { user } = usePrivy();
+  const withdrawAddress = getWithdrawAddress(user);
+  const {
+    total: totalBalance,
+    executableTotal: maxWithdraw,
+    executableAtomic,
+    walletBalance,
+    vaultBalance,
+    voiBalance,
+    hasBalance,
+    canWithdrawNow,
+    isLoading: balanceLoading,
+  } = useWithdrawableBalance(walletAddress);
   const { deposit, isSubmitting: isDepositing, error: depositError } = useStashDeposit(walletAddress);
   const { configured: blinkConfigured } = useBlinkConfigured();
-  const { withdraw, isSubmitting: isWithdrawing, error: withdrawError } = useEarnWithdraw(walletAddress);
+  const {
+    withdraw,
+    isSubmitting: isWithdrawing,
+    error: withdrawError,
+    withdrawAddressConfigured,
+  } = useEarnWithdraw(walletAddress);
 
   const [amount, setAmount] = useState("0");
   const [depositMethod, setDepositMethod] = useState<StashDepositMethod | "blink">("fiat");
+  const [withdrawRawAmount, setWithdrawRawAmount] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [blinkError, setBlinkError] = useState<string | null>(null);
 
   const numeric = Number(amount) || 0;
-  const maxWithdraw = assetsInVault;
-  const balanceLoading = positionLoading;
   const isBlinkDeposit = mode === "deposit" && depositMethod === "blink";
   const isSubmitting = mode === "deposit" ? isDepositing : isWithdrawing;
   const submitError =
@@ -73,7 +92,8 @@ export function MoneySheet({
       : withdrawError;
   const canSubmitPrivy = numeric > 0 && !isDepositing && depositMethod !== "blink";
   const canSubmitWithdraw =
-    configured &&
+    withdrawAddressConfigured &&
+    canWithdrawNow &&
     numeric > 0 &&
     numeric <= maxWithdraw &&
     !isWithdrawing &&
@@ -81,6 +101,7 @@ export function MoneySheet({
 
   const reset = () => {
     setAmount("0");
+    setWithdrawRawAmount(null);
     setDone(false);
     setDepositMethod("fiat");
     setBlinkError(null);
@@ -111,18 +132,43 @@ export function MoneySheet({
   const handleWithdrawSubmit = async () => {
     if (!canSubmitWithdraw) return;
 
-    const action = await withdraw(numeric);
-    if (!action) return;
-    toast.success("Withdrawal sent to your wallet.");
+    const result = await withdraw(
+      numeric,
+      withdrawRawAmount && BigInt(withdrawRawAmount) > 0n ? withdrawRawAmount : undefined,
+    );
+    if (!result) return;
+    toast.success(`Withdrawal sent to ${truncateAddress(result.destinationAddress)} on Base.`);
     finishSuccess();
   };
 
+  const handleAmountChange = (next: string) => {
+    setAmount(next);
+    setWithdrawRawAmount(null);
+  };
+
+  const handleWithdrawMax = () => {
+    if (!canWithdrawNow || executableAtomic === "0") return;
+    const maxDisplay = atomicToUsdc(executableAtomic).toFixed(2);
+    setAmount(maxDisplay);
+    setWithdrawRawAmount(executableAtomic);
+  };
+
   const title = mode === "deposit" ? "Add to Stash" : "Withdraw";
-  const availableLabel = balanceLoading ? "…" : fmtUSD(maxWithdraw);
+  const availableLabel = balanceLoading ? "…" : fmtUSD(totalBalance);
+  const withdrawableLabel = balanceLoading ? "…" : fmtUSD(maxWithdraw);
+  const breakdownParts = [
+    walletBalance > 0 ? `${fmtUSD(walletBalance)} wallet` : null,
+    vaultBalance > 0 ? `${fmtUSD(vaultBalance)} vault` : null,
+    voiBalance > 0 ? `${fmtUSD(voiBalance)} Voi` : null,
+  ].filter(Boolean);
   const description =
     mode === "deposit"
       ? "Debit card, crypto account, or Blink. Starts earning yield when USDC arrives."
-      : `Available ${availableLabel}`;
+      : withdrawAddressConfigured
+        ? voiBalance > 0 && maxWithdraw < totalBalance
+          ? `${fmtUSD(totalBalance)} total · ${withdrawableLabel} withdrawable now · ${truncateAddress(withdrawAddress!)}`
+          : `Available ${availableLabel} · sends to ${truncateAddress(withdrawAddress!)} on Base`
+        : `Available ${availableLabel}`;
 
   // Blink mounts its iframe on document.body. Radix modal dialogs call hideOthers()
   // on siblings, which breaks WebAuthn passkey create/get inside the Blink iframe.
@@ -147,14 +193,32 @@ export function MoneySheet({
           <SheetDescription className="text-muted-foreground">{description}</SheetDescription>
         </SheetHeader>
 
-        {mode === "withdraw" && earnLoading ? (
+        {mode === "withdraw" && balanceLoading ? (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center text-sm text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin" />
             Loading…
           </div>
-        ) : mode === "withdraw" && !configured ? (
+        ) : mode === "withdraw" && !withdrawAddressConfigured ? (
+          <div className="space-y-4 px-6 py-10 text-center text-sm text-muted-foreground">
+            <p>Add a Base address before you can withdraw.</p>
+            <p>USDC is sent from your wallet, yield vault, or Voi balance — in that order.</p>
+            <Link
+              to="/account"
+              onClick={() => onOpenChange(false)}
+              className="inline-flex h-12 items-center justify-center rounded-2xl bg-foreground px-6 text-sm font-semibold text-background"
+            >
+              Set withdraw address
+            </Link>
+          </div>
+        ) : mode === "withdraw" && !balanceLoading && !hasBalance ? (
           <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-            <p>Withdrawals are not available yet.</p>
+            <p>Nothing to withdraw yet.</p>
+            <p className="mt-1">Deposit USDC to your stash first.</p>
+          </div>
+        ) : mode === "withdraw" && !balanceLoading && hasBalance && !canWithdrawNow ? (
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+            <p>{fmtUSD(voiBalance)} is on Voi.</p>
+            <p className="mt-1">Moving Voi USDC to Base for withdrawal isn&apos;t available yet.</p>
           </div>
         ) : done ? (
           <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
@@ -162,12 +226,14 @@ export function MoneySheet({
               <Check className="h-7 w-7" strokeWidth={2.25} />
             </div>
             <p className="font-display text-2xl">
-              {mode === "deposit" ? "Deposit started." : "Sent to your wallet."}
+              {mode === "deposit" ? "Deposit started." : "Withdrawal sent."}
             </p>
             <p className="text-sm text-muted-foreground">
               {mode === "deposit"
                 ? "USDC may take a few minutes to arrive and start earning."
-                : "USDC will appear in your wallet shortly."}
+                : withdrawAddress
+                  ? `USDC is on its way to ${truncateAddress(withdrawAddress)} on Base.`
+                  : "USDC is on its way to your withdraw address on Base."}
             </p>
           </div>
         ) : (
@@ -180,6 +246,36 @@ export function MoneySheet({
                 <span className="text-muted-foreground/60">$</span>
                 {amount}
               </p>
+              {mode === "withdraw" && (
+                <div className="mt-3 space-y-1">
+                  <div className="flex items-center justify-center gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      {voiBalance > 0 && maxWithdraw < totalBalance
+                        ? `${withdrawableLabel} withdrawable now`
+                        : `Available ${availableLabel}`}
+                    </p>
+                    {canWithdrawNow && (
+                      <button
+                        type="button"
+                        onClick={handleWithdrawMax}
+                        className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground transition-colors active:bg-secondary/70"
+                      >
+                        Max
+                      </button>
+                    )}
+                  </div>
+                  {breakdownParts.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {breakdownParts.join(" · ")}
+                    </p>
+                  )}
+                  {voiBalance > 0 && maxWithdraw < totalBalance && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {fmtUSD(voiBalance)} on Voi included in total — Base payout coming soon.
+                    </p>
+                  )}
+                </div>
+              )}
               {mode === "withdraw" && numeric > maxWithdraw && (
                 <p className="mt-2 text-xs text-destructive">Exceeds available balance.</p>
               )}
@@ -188,7 +284,7 @@ export function MoneySheet({
               )}
             </div>
 
-            <AmountKeypad value={amount} onChange={setAmount} />
+            <AmountKeypad value={amount} onChange={handleAmountChange} />
 
             {mode === "deposit" ? (
               <div className="mt-6 space-y-2">

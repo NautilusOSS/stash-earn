@@ -1,13 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { ProfileEditSheet } from "@/components/ProfileEditSheet";
-import { UserCircle, ShieldCheck, Bell, LifeBuoy, ChevronRight, LogOut } from "lucide-react";
+import { WithdrawAddressSheet } from "@/components/WithdrawAddressSheet";
+import { UserCircle, ShieldCheck, Bell, LifeBuoy, ChevronRight, LogOut, ArrowUpFromLine } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { isDebugMode } from "@/lib/debug";
-import { getPreferredName } from "@/lib/privy/profile";
+import { getPreferredName, getWithdrawAddress, hasWithdrawAddress } from "@/lib/privy/profile";
 import { truncateAddress } from "@/lib/privy/constants";
 import {
   getLoginMethodLabel,
@@ -64,9 +65,12 @@ function AccountError({ error, reset }: { error: Error; reset: () => void }) {
 function AccountPage() {
   const { user, logout } = usePrivy();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [withdrawAddressOpen, setWithdrawAddressOpen] = useState(false);
 
   const displayName = getUserDisplayName(user);
   const preferredName = getPreferredName(user);
+  const withdrawAddress = getWithdrawAddress(user);
+  const withdrawReady = hasWithdrawAddress(user);
   const avatar = getUserAvatar(user);
   const email = getUserEmail(user);
   const initials = getUserInitials(user);
@@ -85,6 +89,14 @@ function AccountPage() {
       label: "Profile",
       sub: preferredName ? `${preferredName} · name & avatar` : "Set your preferred name",
       onClick: () => setProfileOpen(true),
+    },
+    {
+      icon: ArrowUpFromLine,
+      label: "Withdraw address",
+      sub: withdrawReady
+        ? `${truncateAddress(withdrawAddress!)} · Base`
+        : "Required · set a Base address",
+      onClick: () => setWithdrawAddressOpen(true),
     },
     { icon: ShieldCheck, label: "Security", sub: `${loginMethod} · Face ID on device` },
     { icon: Bell, label: "Notifications", sub: "Daily earnings, transfers" },
@@ -173,6 +185,7 @@ function AccountPage() {
       </p>
 
       <ProfileEditSheet open={profileOpen} onOpenChange={setProfileOpen} />
+      <WithdrawAddressSheet open={withdrawAddressOpen} onOpenChange={setWithdrawAddressOpen} />
     </MobileShell>
   );
 }

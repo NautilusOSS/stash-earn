@@ -38,6 +38,7 @@ export function useEarnPosition(walletAddress: string | undefined) {
     configured: query.data?.configured ?? false,
     position,
     assetsInVault: position?.assetsInVault ?? 0,
+    assetsInVaultAtomic: position?.assetsInVaultAtomic ?? "0",
     earnedYield: position?.earnedYield ?? 0,
     isLoading: query.isLoading,
     isFetching: query.isFetching,

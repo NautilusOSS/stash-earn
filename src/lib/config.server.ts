@@ -28,6 +28,8 @@ export function getServerConfig() {
       appId: readEnv("VITE_PRIVY_APP_ID") ?? readEnv("PRIVY_APP_ID"),
       appSecret: readEnv("PRIVY_APP_SECRET"),
       vaultId: readEnv("PRIVY_VAULT_ID") ?? readEnv("VITE_PRIVY_VAULT_ID"),
+      /** App authorization key (wallet-auth:…). Optional if using user signers via access token. */
+      authorizationPrivateKey: readEnv("PRIVY_AUTHORIZATION_PRIVATE_KEY"),
     },
     voi: {
       algodServer: process.env.VOI_ALGOD_SERVER,

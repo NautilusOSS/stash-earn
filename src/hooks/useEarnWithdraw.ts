@@ -2,22 +2,40 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
-import { earnWithdrawFn } from "@/lib/api/earn.functions";
-import { usdcToAtomic } from "@/lib/privy/earn-amount";
-import type { EarnAction } from "@/lib/privy/earn.types";
+import { earnWithdrawFn, prepareEarnWithdrawFn } from "@/lib/api/earn.functions";
 import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
+import { usdcToAtomic } from "@/lib/privy/earn-amount";
+import { hasWithdrawAddress } from "@/lib/privy/profile";
+import { truncateAddress } from "@/lib/privy/constants";
+import type {
+  StashWithdrawPrepareResult,
+  StashWithdrawSignedAction,
+} from "@/lib/privy/stash-withdraw.types";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
+export type WithdrawResult = {
+  destinationAddress: string;
+};
+
 export function useEarnWithdraw(walletAddress: string | undefined) {
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, user } = usePrivy();
+  const { signWalletAction } = usePrivyWalletActionSigner();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastAction, setLastAction] = useState<EarnAction | null>(null);
+  const [lastResult, setLastResult] = useState<WithdrawResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const withdrawAddressConfigured = hasWithdrawAddress(user);
+
   const withdraw = useCallback(
-    async (amount: number) => {
+    async (amount: number, rawAmountOverride?: string) => {
+      if (!withdrawAddressConfigured) {
+        setError("Set a Base withdraw address in Account first.");
+        return null;
+      }
+
       if (!walletAddress) {
         setError("Connect a wallet first.");
         return null;
@@ -29,7 +47,13 @@ export function useEarnWithdraw(walletAddress: string | undefined) {
         return null;
       }
 
-      if (!Number.isFinite(amount) || amount <= 0) {
+      const rawAmount = rawAmountOverride ?? usdcToAtomic(amount);
+      if (rawAmount === "0" || BigInt(rawAmount) <= 0n) {
+        setError("Enter an amount greater than zero.");
+        return null;
+      }
+
+      if (!rawAmountOverride && (!Number.isFinite(amount) || amount <= 0)) {
         setError("Enter an amount greater than zero.");
         return null;
       }
@@ -41,34 +65,56 @@ export function useEarnWithdraw(walletAddress: string | undefined) {
       }
 
       setError(null);
-      setLastAction(null);
+      setLastResult(null);
       setIsSubmitting(true);
 
       try {
-        const { action } = await earnWithdrawFn({
+        const prepared = (await prepareEarnWithdrawFn({
           data: {
             accessToken,
             evmAddress: validation.normalized,
-            rawAmount: usdcToAtomic(amount),
+            rawAmount,
+          },
+        })) as StashWithdrawPrepareResult;
+
+        const signedActions: StashWithdrawSignedAction[] = [];
+        for (const action of prepared.actions) {
+          const auth = await signWalletAction(action.path, action.body);
+          signedActions.push({ ...action, ...auth });
+        }
+
+        const result = await earnWithdrawFn({
+          data: {
+            accessToken,
+            evmAddress: validation.normalized,
+            rawAmount,
+            signedActions,
           },
         });
 
-        if (action.status === "failed" || action.status === "rejected") {
+        if (
+          result.withdrawAction &&
+          (result.withdrawAction.status === "failed" ||
+            result.withdrawAction.status === "rejected")
+        ) {
           throw new Error(
-            action.status === "rejected"
-              ? "Withdrawal was rejected. Try a smaller amount."
-              : "Withdrawal failed onchain.",
+            result.withdrawAction.status === "rejected"
+              ? "Vault withdrawal was rejected. Try a smaller amount."
+              : "Vault withdrawal failed onchain.",
           );
         }
 
-        setLastAction(action);
+        const withdrawResult: WithdrawResult = {
+          destinationAddress: result.destinationAddress,
+        };
+        setLastResult(withdrawResult);
         await queryClient.invalidateQueries({
           queryKey: earnPositionQueryKey(validation.normalized),
         });
         await queryClient.invalidateQueries({
           queryKey: walletUsdcBalanceQueryKey(validation.normalized),
         });
-        return action;
+        return withdrawResult;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Withdrawal failed.";
         setError(message);
@@ -77,8 +123,23 @@ export function useEarnWithdraw(walletAddress: string | undefined) {
         setIsSubmitting(false);
       }
     },
-    [walletAddress, getAccessToken, queryClient],
+    [
+      walletAddress,
+      getAccessToken,
+      queryClient,
+      withdrawAddressConfigured,
+      signWalletAction,
+    ],
   );
 
-  return { withdraw, isSubmitting, lastAction, error };
+  return {
+    withdraw,
+    isSubmitting,
+    lastResult,
+    error,
+    withdrawAddressConfigured,
+    destinationLabel: lastResult
+      ? truncateAddress(lastResult.destinationAddress)
+      : null,
+  };
 }

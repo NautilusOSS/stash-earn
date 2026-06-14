@@ -5,7 +5,8 @@ export const CHAIN = base;
 export const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
 export const USDC_DECIMALS = 6;
 
-export const PRIVY_API_URL = "https://api.privy.io/api/v1";
+/** Privy Wallet API base (v1). Do not use legacy `/api/v1` — transfer and other wallet actions 404 there. */
+export const PRIVY_API_URL = "https://api.privy.io/v1";
 
 export function getPrivyAppId(): string {
   return import.meta.env.VITE_PRIVY_APP_ID ?? "";

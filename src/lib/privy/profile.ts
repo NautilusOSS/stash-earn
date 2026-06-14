@@ -1,5 +1,7 @@
 import type { User } from "@privy-io/react-auth";
 
+import { validateEvmAddress } from "@/lib/xchain/validate";
+
 export const PROFILE_AVATARS = ["🌻", "😀", "🚀", "🏖️", "🐶", "🌲", "☕", "❤️"] as const;
 
 export const PROFILE_NAME_MAX_LENGTH = 30;
@@ -9,6 +11,15 @@ export const PROFILE_NAME_EXAMPLES = ["Mom", "Dad", "Nick", "Grandma", "Sarah"];
 export interface UserProfile {
   preferredName?: string;
   avatar?: string;
+  /** Base mainnet address that receives vault withdrawals. */
+  withdrawAddress?: string;
+}
+
+function parseWithdrawAddressFromMetadata(metadata: Record<string, unknown>) {
+  const raw = metadata.withdrawAddress;
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const validation = validateEvmAddress(raw);
+  return validation.valid ? validation.normalized : undefined;
 }
 
 export function getUserProfile(user: User | null | undefined): UserProfile {
@@ -18,8 +29,17 @@ export function getUserProfile(user: User | null | undefined): UserProfile {
   const preferredName =
     typeof metadata.preferredName === "string" ? metadata.preferredName.trim() : undefined;
   const avatar = typeof metadata.avatar === "string" ? metadata.avatar : undefined;
+  const withdrawAddress = parseWithdrawAddressFromMetadata(metadata);
 
-  return { preferredName, avatar };
+  return { preferredName, avatar, withdrawAddress };
+}
+
+export function getWithdrawAddress(user: User | null | undefined): string | undefined {
+  return getUserProfile(user).withdrawAddress;
+}
+
+export function hasWithdrawAddress(user: User | null | undefined): boolean {
+  return !!getWithdrawAddress(user);
 }
 
 export function getPreferredName(user: User | null | undefined): string | undefined {

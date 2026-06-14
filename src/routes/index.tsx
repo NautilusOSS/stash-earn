@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
+import { useCompositeYield } from "@/hooks/useCompositeYield";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
@@ -32,24 +33,31 @@ function Home() {
   const { user } = usePrivy();
   const { apy: fallbackApy, transactions } = useStash();
   const walletAddress = getUserWalletAddress(user);
-  const { baseBalance, executionBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
-  const { assetsInVault, earnedYield, isLoading: positionLoading } = useEarnPosition(walletAddress);
-  const { userApyDecimal, userApyLabel, configured: earnConfigured } = useEarnVaultDetails();
+  const { baseBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
+  const { earnedYield, isLoading: positionLoading } = useEarnPosition(walletAddress);
+  const { configured: earnConfigured } = useEarnVaultDetails();
+  const {
+    totalBalance,
+    earningBalance,
+    compositeApyDecimal,
+    compositeApyLabel,
+    apyLoading,
+    isLoading: compositeLoading,
+  } = useCompositeYield(walletAddress);
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
 
   const preferredName = getPreferredName(user) ?? "there";
   const avatar = getUserAvatar(user);
   const greeting = getTimeBasedGreeting();
 
-  const balance = assetsInVault + baseBalance + executionBalance;
-  const balanceLoading = walletLoading || positionLoading;
-  const apy = userApyDecimal ?? fallbackApy;
-  const apyDisplay = userApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
+  const balanceLoading = walletLoading || positionLoading || compositeLoading;
+  const apy = compositeApyDecimal ?? fallbackApy;
+  const apyDisplay = apyLoading ? "…" : compositeApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
 
-  const annual = assetsInVault * apy;
+  const annual = totalBalance * apy;
   const daily = annual / 365;
 
-  const balanceLabel = balanceLoading ? "—" : fmtUSD(balance).replace("$", "");
+  const balanceLabel = balanceLoading ? "—" : fmtUSD(totalBalance).replace("$", "");
   const [dollars, cents] = balanceLabel.includes(".")
     ? balanceLabel.split(".")
     : [balanceLabel, "00"];
@@ -96,7 +104,7 @@ function Home() {
             <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/60">
               Earning
             </p>
-            <p className="mt-1 text-base font-semibold">{fmtUSD(assetsInVault)}</p>
+            <p className="mt-1 text-base font-semibold">{fmtUSD(earningBalance)}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/60">
@@ -138,12 +146,12 @@ function Home() {
           </div>
           <div>
             <p className="text-[15px] font-medium">
-              {assetsInVault > 0
+              {earningBalance > 0
                 ? `You could earn about ${fmtUSD(daily)} today.`
                 : "Deposit USDC to start earning."}
             </p>
             <p className="text-xs text-muted-foreground">
-              At {apyDisplay} APY, {fmtUSD(assetsInVault)} earns about{" "}
+              At {apyDisplay} APY, {fmtUSD(totalBalance)} earns about{" "}
               {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
             </p>
           </div>

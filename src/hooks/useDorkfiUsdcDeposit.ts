@@ -6,6 +6,7 @@ import {
   prepareDorkFiUsdcDepositFn,
   submitDorkFiUsdcDepositFn,
 } from "@/lib/api/dorkfi.functions";
+import { dorkFiUsdcPositionQueryKey } from "@/hooks/useDorkFiUsdcPosition";
 import type {
   DorkFiUsdcDepositPrepareResult,
   DorkFiUsdcDepositSubmitResult,
@@ -70,6 +71,9 @@ export function useDorkfiUsdcDeposit(evmAddress: string | undefined) {
       setSubmitResult(submitted);
       await queryClient.invalidateQueries({ queryKey: ["xchain-execution-status"] });
       await queryClient.invalidateQueries({ queryKey: ["wallet-usdc-balance"] });
+      await queryClient.invalidateQueries({
+        queryKey: dorkFiUsdcPositionQueryKey(validation.normalized),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "DorkFi deposit failed");
     } finally {

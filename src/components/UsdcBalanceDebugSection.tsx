@@ -1,9 +1,13 @@
 import { Loader2, RefreshCw } from "lucide-react";
 
+import { useCompositeYield } from "@/hooks/useCompositeYield";
+import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
+import { useDorkFiUsdcPosition } from "@/hooks/useDorkFiUsdcPosition";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useXChainAddress } from "@/hooks/useXChainAddress";
+import { VOI_MAINNET_A_MARKET_USDC } from "@/lib/dorkfi/constants";
 import { truncateAddress } from "@/lib/privy/constants";
 import { fmtUSD } from "@/lib/stash";
 import { VOI_USDC_ASSET_ID } from "@/lib/voi/constants";
@@ -14,7 +18,6 @@ type UsdcBalanceDebugSectionProps = {
 
 export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSectionProps) {
   const {
-    balance: walletTotal,
     baseBalance,
     executionBalance,
     isLoading: walletLoading,
@@ -31,17 +34,45 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
     error: positionError,
     refetch: refetchPosition,
   } = useEarnPosition(walletAddress);
-  const { details: vaultDetails } = useEarnVaultDetails();
+  const {
+    details: vaultDetails,
+    userApyLabel,
+    isLoading: vaultDetailsLoading,
+    refetch: refetchVaultDetails,
+  } = useEarnVaultDetails();
   const { voiExecutionAddress, isLoading: addressLoading } = useXChainAddress(walletAddress);
+  const {
+    balance: dorkFiBalance,
+    isLoading: dorkFiLoading,
+    isFetching: dorkFiFetching,
+    error: dorkFiError,
+    refetch: refetchDorkFi,
+  } = useDorkFiUsdcPosition(walletAddress);
+  const {
+    supplyApyLabel,
+    isLoading: apyLoading,
+    isFetching: apyFetching,
+    refetch: refetchApy,
+  } = useDorkFiSupplyApy();
 
-  const loading = walletLoading || positionLoading || addressLoading;
-  const fetching = walletFetching || positionFetching;
-  const totalBalance = assetsInVault + walletTotal;
+  const {
+    totalBalance,
+    compositeYieldDetail,
+    apyLoading: compositeApyLoading,
+  } = useCompositeYield(walletAddress);
+
+  const loading = walletLoading || positionLoading || addressLoading || dorkFiLoading;
+  const fetching = walletFetching || positionFetching || dorkFiFetching || apyFetching;
   const earnError = earnConfigured ? positionError : null;
 
   const refresh = () => {
     void refetchWallet();
-    if (earnConfigured) void refetchPosition();
+    void refetchDorkFi();
+    void refetchApy();
+    if (earnConfigured) {
+      void refetchPosition();
+      void refetchVaultDetails();
+    }
   };
 
   return (
@@ -50,7 +81,7 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
         <div>
           <p className="text-xs text-muted-foreground">USDC balances</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Earn vault + Base wallet + Voi execution ASA{" "}
+            Earn vault, DorkFi supply, Base wallet, and Voi execution ASA{" "}
             <span className="font-mono text-foreground">{VOI_USDC_ASSET_ID}</span>
           </p>
         </div>
@@ -80,10 +111,24 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
               : "Not configured"
           }
           value={loading ? "…" : earnConfigured ? fmtUSD(assetsInVault) : "—"}
+          detail={earnVaultDetail({
+            configured: earnConfigured,
+            loading,
+            apyLoading: vaultDetailsLoading,
+            apyLabel: userApyLabel,
+            earnedYield,
+          })}
+        />
+        <BalanceRow
+          label="AVM DorkFi USDC"
+          sub={`${VOI_MAINNET_A_MARKET_USDC.symbol} · pool ${VOI_MAINNET_A_MARKET_USDC.poolId}`}
+          value={loading ? "…" : fmtUSD(dorkFiBalance)}
           detail={
-            earnConfigured && earnedYield > 0 && !loading
-              ? `+${fmtUSD(earnedYield)} yield`
-              : undefined
+            apyLoading
+              ? "Loading APY…"
+              : supplyApyLabel
+                ? `${supplyApyLabel} APY`
+                : undefined
           }
         />
         <BalanceRow
@@ -102,18 +147,41 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
           }
           value={loading ? "…" : fmtUSD(executionBalance)}
         />
-        <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
-          <p className="text-xs text-muted-foreground">Total (app balance)</p>
-          <p className="text-sm font-semibold tabular-nums">
-            {loading ? "…" : fmtUSD(totalBalance)}
-          </p>
-        </div>
+        <BalanceRow
+          label="Total (app balance)"
+          value={loading ? "…" : fmtUSD(totalBalance)}
+          detail={
+            compositeApyLoading
+              ? "Loading composite yield…"
+              : compositeYieldDetail ?? undefined
+          }
+          valueClassName="font-semibold"
+        />
       </div>
 
       {walletError ? <p className="mt-2 text-sm text-destructive">{walletError}</p> : null}
+      {dorkFiError ? <p className="mt-2 text-sm text-destructive">{dorkFiError}</p> : null}
       {earnError ? <p className="mt-2 text-sm text-destructive">{earnError}</p> : null}
     </div>
   );
+}
+
+function earnVaultDetail(input: {
+  configured: boolean;
+  loading: boolean;
+  apyLoading: boolean;
+  apyLabel: string | null;
+  earnedYield: number;
+}): string | undefined {
+  if (!input.configured) return undefined;
+  if (input.apyLoading) return "Loading APY…";
+
+  const parts: string[] = [];
+  if (input.apyLabel) parts.push(`${input.apyLabel} APY`);
+  if (input.earnedYield > 0 && !input.loading) {
+    parts.push(`+${fmtUSD(input.earnedYield)} yield`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 function BalanceRow({
@@ -121,11 +189,13 @@ function BalanceRow({
   sub,
   value,
   detail,
+  valueClassName,
 }: {
   label: string;
   sub?: string;
   value: string;
   detail?: string;
+  valueClassName?: string;
 }) {
   return (
     <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
@@ -134,7 +204,7 @@ function BalanceRow({
         {sub ? <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{sub}</p> : null}
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-sm font-medium tabular-nums">{value}</p>
+        <p className={`text-sm font-medium tabular-nums ${valueClassName ?? ""}`}>{value}</p>
         {detail ? <p className="text-[11px] text-positive tabular-nums">{detail}</p> : null}
       </div>
     </div>

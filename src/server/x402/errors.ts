@@ -1,5 +1,7 @@
 import type { Context } from "hono";
 
+import { encodePaymentRequiredHeader } from "@x402/core/http";
+
 import type { PaymentRequiredPayload } from "./types";
 
 export function jsonError(c: Context, status: number, error: string, details?: Record<string, unknown>) {
@@ -7,13 +9,13 @@ export function jsonError(c: Context, status: number, error: string, details?: R
 }
 
 export function paymentRequired(c: Context, paymentRequired: PaymentRequiredPayload) {
-  const encoded = Buffer.from(JSON.stringify(paymentRequired)).toString("base64");
-  c.header("payment-required", encoded);
+  c.header("payment-required", encodePaymentRequiredHeader(paymentRequired as never));
   return c.json({ error: X402_ERRORS.paymentRequired }, 402);
 }
 
 export const X402_ERRORS = {
   paymentRequired: "Payment Required",
+  paymentVerificationFailed: "Payment verification failed",
   invalidPayload: "Invalid payment payload",
   underpaid: "Underpaid",
   replay: "Replay detected",

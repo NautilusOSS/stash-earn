@@ -70,6 +70,7 @@ export interface PaymentVerificationResult {
   verifyResponse?: {
     isValid: boolean;
     invalidReason?: string;
+    simulationRevert?: string;
   };
 }
 

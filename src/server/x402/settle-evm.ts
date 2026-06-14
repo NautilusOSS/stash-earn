@@ -17,6 +17,7 @@ import { base, baseSepolia } from "viem/chains";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 
 import { requireEvmSettlementConfig } from "./config";
+import { settleEip3009Payment } from "./eip3009.server";
 import type { SettleEvmResult } from "./types";
 
 function chainForId(chainId: number, rpcUrl: string) {
@@ -106,6 +107,33 @@ export async function settleEvmPayment(
   paymentPayload: PaymentPayload,
   requirements: PaymentRequirements,
 ): Promise<SettleEvmResult> {
+  const inner = paymentPayload.payload as Record<string, unknown>;
+  if (inner.authorization) {
+    const result = await settleEip3009Payment(paymentPayload, requirements);
+    if (result.success && result.transaction) {
+      return {
+        success: true,
+        settleResponse: {
+          success: true,
+          transaction: result.transaction,
+          payer: result.payer,
+          network: requirements.network,
+        },
+      };
+    }
+    return {
+      success: false,
+      error: result.error ?? "Settlement failed",
+      settleResponse: {
+        success: false,
+        errorMessage: result.error,
+        payer: result.payer,
+        network: requirements.network,
+        transaction: "",
+      },
+    };
+  }
+
   try {
     const facilitator = getLocalFacilitator();
     const settleResponse = await facilitator.settle(paymentPayload, requirements);

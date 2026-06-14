@@ -1,8 +1,12 @@
 import { decodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 
+import { formatX402VerifyFailure } from "@/lib/x402/messages";
+import { normalizeEoaSignature } from "@/lib/x402/signature";
+
 import { requireEvmSettlementConfig } from "./config";
-import { getLocalFacilitator } from "./settle-evm";
+import { verifyEip3009Payment } from "./eip3009.server";
+import { probeEip3009SimulationRevert } from "./simulate-eip3009.server";
 import type { PaymentVerificationResult } from "./types";
 
 type EvmAuthorization = {
@@ -190,30 +194,63 @@ export async function verifyPaymentPayload(
     };
   }
 
-  const facilitator = getLocalFacilitator();
-  let verifyResponse;
-  try {
-    verifyResponse = await facilitator.verify(paymentPayload, requirements);
-  } catch (error) {
+  const innerPayload = paymentPayload.payload as Record<string, unknown>;
+  if (typeof innerPayload.signature === "string") {
+    const normalized = normalizeEoaSignature(innerPayload.signature);
+    if (normalized !== innerPayload.signature) {
+      paymentPayload = {
+        ...paymentPayload,
+        payload: { ...innerPayload, signature: normalized },
+      };
+    }
+  }
+
+  if (!innerPayload.authorization) {
     return {
-      status: "verify_failed",
-      message: error instanceof Error ? error.message : "Facilitator verify failed.",
+      status: "invalid_payload",
+      message: "Only EIP-3009 USDC payments are supported.",
       paymentPayload,
       requirements,
-      payer: extractPayer(paymentPayload),
     };
   }
 
-  if (!verifyResponse.isValid) {
+  const localVerify = await verifyEip3009Payment(paymentPayload, requirements);
+  if (!localVerify.isValid) {
+    const invalidReason = localVerify.invalidReason;
+    const payer = localVerify.payer;
+    const simulationRevert =
+      localVerify.simulationRevert ??
+      (invalidReason.includes("transaction_simulation_failed")
+        ? await probeEip3009SimulationRevert(paymentPayload, requirements)
+        : null);
+
+    console.error("[x402] verify failed", {
+      invalidReason,
+      simulationRevert,
+      payer,
+      amount: requirements.amount,
+      payTo: requirements.payTo,
+      network: requirements.network,
+    });
+
+    const baseMessage =
+      formatX402VerifyFailure(invalidReason) ??
+      invalidReason ??
+      "Payment verification failed.";
+    const message = simulationRevert
+      ? `${baseMessage} Revert: ${simulationRevert}`
+      : baseMessage;
+
     return {
       status: "verify_failed",
-      message: verifyResponse.invalidReason ?? "Facilitator rejected payment.",
+      message,
       paymentPayload,
       requirements,
-      payer: extractPayer(paymentPayload),
+      payer,
       verifyResponse: {
         isValid: false,
-        invalidReason: verifyResponse.invalidReason,
+        invalidReason,
+        simulationRevert: simulationRevert ?? undefined,
       },
     };
   }
@@ -223,7 +260,7 @@ export async function verifyPaymentPayload(
     message: "Payment verified.",
     paymentPayload,
     requirements,
-    payer: verifyResponse.payer ?? extractPayer(paymentPayload),
+    payer: localVerify.payer,
     verifyResponse: { isValid: true },
   };
 }

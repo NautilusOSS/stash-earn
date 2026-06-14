@@ -28,8 +28,14 @@ function verificationStatusToResponse(
       return { status: 409, error: X402_ERRORS.replay };
     case "invalid_payload":
       return { status: 400, error: X402_ERRORS.invalidPayload };
+    case "verify_failed":
+    case "wrong_network":
+    case "wrong_recipient":
+    case "wrong_token":
+    case "expired":
+      return { status: 402, error: X402_ERRORS.paymentVerificationFailed };
     default:
-      return { status: 400, error: message };
+      return { status: 402, error: message || X402_ERRORS.paymentVerificationFailed };
   }
 }
 
@@ -60,7 +66,15 @@ export function createPaymentGate(options: ProtectedRouteOptions): MiddlewareHan
         if (mapped.status === 402 && verification.status === "missing") {
           return paymentRequired(c, paymentRequiredPayload);
         }
-        return jsonError(c, mapped.status, mapped.error, { message: verification.message });
+        return jsonError(c, mapped.status, mapped.error, {
+          message: verification.message,
+          ...(verification.verifyResponse?.invalidReason
+            ? { invalidReason: verification.verifyResponse.invalidReason }
+            : {}),
+          ...(verification.verifyResponse?.simulationRevert
+            ? { simulationRevert: verification.verifyResponse.simulationRevert }
+            : {}),
+        });
       }
 
       const paymentId = derivePaymentId(verification.paymentPayload!);

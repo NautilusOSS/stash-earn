@@ -11,11 +11,14 @@ node_modules
 dist
 dist-ssr
 .output
+.nitro
 .vinxi
 .tanstack/**
 .nitro
 *.local
 .data
+deploy/lightsail/runtime-env.json
+deploy/lightsail/containers.json
 
 # Environment (keep .env.example tracked)
 .env

@@ -13,6 +13,9 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
+    preview: {
+      allowedHosts: true,
+    },
     optimizeDeps: {
       // Pre-bundle Privy + wallet SDKs so funding modals don't hit stale dep 504s in dev.
       include: [

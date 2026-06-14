@@ -2,6 +2,7 @@ import { CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 
 import { usePlatformAvmUsdcOptIn } from "@/hooks/usePlatformAvmUsdcOptIn";
 import { truncateAddress } from "@/lib/privy/constants";
+import { fmtUSD } from "@/lib/stash";
 import { VOI_BLOCK_EXPLORER_TX, VOI_USDC_ASSET_ID } from "@/lib/voi/constants";
 
 /**
@@ -42,20 +43,40 @@ export function VoiUsdcOptInDebugSection() {
         {status?.avmAddress ? truncateAddress(status.avmAddress) : "—"}
       </p>
 
-      <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
-        <div>
-          <p className="text-xs text-muted-foreground">Status</p>
-          <p
-            className={
-              optedIn
-                ? "text-sm font-medium text-positive"
-                : "text-sm font-medium text-foreground"
-            }
-          >
-            {statusLabel}
-          </p>
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
+          <div>
+            <p className="text-xs text-muted-foreground">Status</p>
+            <p
+              className={
+                optedIn
+                  ? "text-sm font-medium text-positive"
+                  : "text-sm font-medium text-foreground"
+              }
+            >
+              {statusLabel}
+            </p>
+          </div>
+          {isLoadingStatus ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : null}
         </div>
-        {isLoadingStatus ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+        {isConfigured ? (
+          <>
+            <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
+              <p className="text-xs text-muted-foreground">VOI balance</p>
+              <p className="text-sm font-medium tabular-nums">
+                {isLoadingStatus ? "…" : `${(status?.voiBalance ?? 0).toFixed(4)} VOI`}
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/30 px-3 py-2.5">
+              <p className="text-xs text-muted-foreground">USDC balance</p>
+              <p className="text-sm font-medium tabular-nums">
+                {isLoadingStatus ? "…" : fmtUSD(status?.balance ?? 0)}
+              </p>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {statusError ? <p className="mt-2 text-sm text-destructive">{statusError}</p> : null}

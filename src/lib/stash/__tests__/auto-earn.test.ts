@@ -25,7 +25,7 @@ describe("auto-earn", () => {
         dorkFiApyDecimal: 0.06,
         earnConfigured: true,
         dorkFiExecutionReady: true,
-        x402BridgeConfigured: true,
+        voiBridgeConfigured: true,
         dorkFiUsdcBalance: 0,
       }),
     ).toBe("dorkfi");
@@ -37,7 +37,7 @@ describe("auto-earn", () => {
         dorkFiApyDecimal: 0.05,
         earnConfigured: true,
         dorkFiExecutionReady: true,
-        x402BridgeConfigured: true,
+        voiBridgeConfigured: true,
         dorkFiUsdcBalance: 10,
       }),
     ).toBe("earn_vault");
@@ -51,7 +51,7 @@ describe("auto-earn", () => {
         dorkFiApyDecimal: 0.08,
         earnConfigured: true,
         dorkFiExecutionReady: false,
-        x402BridgeConfigured: true,
+        voiBridgeConfigured: true,
       }),
     ).toBe("earn_vault");
   });
@@ -64,7 +64,7 @@ describe("auto-earn", () => {
         dorkFiApyDecimal: 0.06,
         earnConfigured: true,
         dorkFiExecutionReady: true,
-        x402BridgeConfigured: true,
+        voiBridgeConfigured: true,
         dorkFiUsdcBalance: 0,
       }),
     ).toBe("dorkfi");
@@ -78,7 +78,7 @@ describe("auto-earn", () => {
         dorkFiApyDecimal: 0.06,
         earnConfigured: true,
         dorkFiExecutionReady: true,
-        x402BridgeConfigured: false,
+        voiBridgeConfigured: false,
         dorkFiUsdcBalance: 5,
       }),
     ).toBe("dorkfi");

@@ -1,21 +1,24 @@
-import { useWallets } from "@privy-io/react-auth";
+import { usePrivy } from "@privy-io/react-auth";
 import { useCallback, useState } from "react";
-import { getAddress, isAddressEqual } from "viem";
 
+import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import {
-  bridgeUsdcToVoiViaX402,
-  type BridgeUsdcToVoiResult,
-} from "@/lib/x402/bridge";
+  executeVoiBridgeTransferFn,
+  prepareVoiBridgeTransferFn,
+} from "@/lib/api/voi-bridge.functions";
+import { usdcToAtomic } from "@/lib/privy/earn-amount";
+import type { VoiBridgeTransferResult } from "@/lib/stash/voi-bridge.server";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
 export function useBridgeUsdcToVoi(walletAddress: string | undefined) {
-  const { wallets } = useWallets();
+  const { getAccessToken } = usePrivy();
+  const { signWalletAction } = usePrivyWalletActionSigner();
   const [isBridging, setIsBridging] = useState(false);
-  const [result, setResult] = useState<BridgeUsdcToVoiResult | null>(null);
+  const [result, setResult] = useState<VoiBridgeTransferResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const bridgeUsdc = useCallback(
-    async (amount: number): Promise<BridgeUsdcToVoiResult> => {
+    async (amount: number): Promise<VoiBridgeTransferResult> => {
       if (!walletAddress) {
         throw new Error("Connect an EVM wallet first.");
       }
@@ -25,10 +28,13 @@ export function useBridgeUsdcToVoi(walletAddress: string | undefined) {
         throw new Error(validation.error);
       }
 
-      const payer = getAddress(validation.normalized);
-      const wallet = wallets.find((w) => isAddressEqual(getAddress(w.address), payer));
-      if (!wallet) {
-        throw new Error("Embedded Privy wallet not found. Reconnect your wallet and retry.");
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Enter an amount greater than zero.");
+      }
+
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error("Sign in to bridge USDC to Voi.");
       }
 
       setError(null);
@@ -36,10 +42,23 @@ export function useBridgeUsdcToVoi(walletAddress: string | undefined) {
       setIsBridging(true);
 
       try {
-        const bridged = await bridgeUsdcToVoiViaX402({
-          evmAddress: validation.normalized,
-          amount,
-          wallet,
+        const rawAmount = usdcToAtomic(amount);
+        const prepared = await prepareVoiBridgeTransferFn({
+          data: {
+            accessToken,
+            evmAddress: validation.normalized,
+            rawAmount,
+          },
+        });
+        const clientAuth = await signWalletAction(prepared.path, prepared.body);
+        const bridged = await executeVoiBridgeTransferFn({
+          data: {
+            accessToken,
+            evmAddress: validation.normalized,
+            rawAmount,
+            clientAuth,
+            signedBody: prepared.body,
+          },
         });
         setResult(bridged);
         return bridged;
@@ -51,7 +70,7 @@ export function useBridgeUsdcToVoi(walletAddress: string | undefined) {
         setIsBridging(false);
       }
     },
-    [walletAddress, wallets],
+    [walletAddress, getAccessToken, signWalletAction],
   );
 
   return {

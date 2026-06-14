@@ -10,7 +10,7 @@ import { useDorkfiUsdcDeposit } from "@/hooks/useDorkfiUsdcDeposit";
 import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
 import { useEarnDeposit } from "@/hooks/useEarnDeposit";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
-import { useX402FacilitatorStatus } from "@/hooks/useX402FacilitatorStatus";
+import { useVoiBridgeConfigured } from "@/hooks/useVoiBridgeConfigured";
 import { useXChainExecutionStatus } from "@/hooks/useXChainExecutionStatus";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
 import { getXChainExecutionStatusFn } from "@/lib/api/dorkfi.functions";
@@ -22,7 +22,6 @@ import {
   type ResolvedAutoEarnTarget,
 } from "@/lib/stash/auto-earn";
 import { waitForExecutionUsdcBalance } from "@/lib/stash/wait-for-voi-usdc";
-import { X402_MAX_BRIDGE_USDC } from "@/lib/x402/client";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
 const USDC_EPSILON = 0.000_001;
@@ -37,7 +36,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
   const { depositUsdc: depositToDorkFi } = useDorkfiUsdcDeposit(walletAddress);
   const { bridgeUsdc } = useBridgeUsdcToVoi(walletAddress);
   const { status: executionStatus } = useXChainExecutionStatus(walletAddress);
-  const { isConfigured: x402BridgeConfigured } = useX402FacilitatorStatus(walletAddress);
+  const { configured: voiBridgeConfigured } = useVoiBridgeConfigured();
 
   const dorkFiExecutionReady =
     executionStatus != null &&
@@ -53,7 +52,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
     dorkFiApyDecimal: supplyApyDecimal,
     earnConfigured,
     dorkFiExecutionReady,
-    x402BridgeConfigured,
+    voiBridgeConfigured,
     dorkFiUsdcBalance,
   });
 
@@ -83,12 +82,6 @@ export function useAutoEarn(walletAddress: string | undefined) {
 
       if (bridgeAmount <= USDC_EPSILON) {
         return existingVoiUsdc;
-      }
-
-      if (bridgeAmount > X402_MAX_BRIDGE_USDC) {
-        throw new Error(
-          `Auto earn needs to bridge $${bridgeAmount.toFixed(2)} USDC to Voi, but the x402 bridge maximum is $${X402_MAX_BRIDGE_USDC}.`,
-        );
       }
 
       const walletUsdc = await fetchWalletUsdcBalance(normalizedAddress);
@@ -126,7 +119,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
         dorkFiApyDecimal: supplyApyDecimal,
         earnConfigured,
         dorkFiExecutionReady,
-        x402BridgeConfigured,
+        voiBridgeConfigured,
         dorkFiUsdcBalance,
       });
 
@@ -149,7 +142,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
           await bridgeDepositToVoiIfNeeded(validation.normalized, amount);
           await depositToDorkFi();
           if (options?.notify) {
-            toast.success("USDC bridged to Voi and supplied to DorkFi.");
+            toast.success("USDC moved to Voi and supplied to DorkFi.");
           }
         }
 
@@ -161,7 +154,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
             description:
               target === "earn_vault"
                 ? "USDC may still be settling on Base before it can enter the Earn vault."
-                : "Could not bridge to Voi or supply to DorkFi yet. Check your execution address and Base wallet balance.",
+                : "Could not move USDC to Voi or supply to DorkFi yet. Check your execution address and Base wallet balance.",
           });
         }
         return null;
@@ -174,7 +167,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
       supplyApyDecimal,
       earnConfigured,
       dorkFiExecutionReady,
-      x402BridgeConfigured,
+      voiBridgeConfigured,
       dorkFiUsdcBalance,
       depositToEarn,
       bridgeDepositToVoiIfNeeded,

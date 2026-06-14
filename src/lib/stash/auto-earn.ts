@@ -22,7 +22,7 @@ export const AUTO_EARN_OPTIONS: AutoEarnDestinationOption[] = [
     id: "dorkfi",
     label: "DorkFi",
     description:
-      "Bridge Base USDC to Voi via x402, then supply to DorkFi when your execution address is ready.",
+      "Move Base USDC to Voi and supply to DorkFi automatically when your execution address is ready.",
   },
   {
     id: "highest_yield",
@@ -49,14 +49,14 @@ export function resolveAutoEarnTarget(input: {
   earnConfigured: boolean;
   /** Opted into Voi USDC with enough VOI for a DorkFi deposit. */
   dorkFiExecutionReady: boolean;
-  /** Base x402 settlement + Voi mirror configured on the server. */
-  x402BridgeConfigured: boolean;
+  /** Privy Base transfer + platform Voi USDC mirror configured on the server. */
+  voiBridgeConfigured: boolean;
   /** USDC already on the Voi execution address. */
   dorkFiUsdcBalance?: number;
 }): ResolvedAutoEarnTarget | null {
   const hasVoiUsdc = (input.dorkFiUsdcBalance ?? 0) > 0;
   const dorkFiAvailable =
-    input.dorkFiExecutionReady && (hasVoiUsdc || input.x402BridgeConfigured);
+    input.dorkFiExecutionReady && (hasVoiUsdc || input.voiBridgeConfigured);
 
   if (input.preference === "earn_vault") {
     return input.earnConfigured ? "earn_vault" : null;

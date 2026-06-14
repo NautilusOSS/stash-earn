@@ -19,9 +19,11 @@ import { readEnv } from "@/lib/env.server";
 //     VITE_ prefix. Never put secrets here — they ship to the browser.
 
 import { getBlinkServerConfig } from "@/lib/blink/config.server";
+import { getDynamicServerConfig } from "@/lib/dynamic/config.server";
 
 export function getServerConfig() {
   const blink = getBlinkServerConfig();
+  const dynamic = getDynamicServerConfig();
   return {
     nodeEnv: process.env.NODE_ENV,
     privy: {
@@ -45,6 +47,11 @@ export function getServerConfig() {
       merchantPrivateKey: blink.merchantPrivateKey,
       chainId: blink.chainId,
       payUrl: blink.payUrl,
+    },
+    dynamic: {
+      environmentId: dynamic.environmentId,
+      checkoutId: dynamic.checkoutId,
+      apiToken: dynamic.apiToken,
     },
   };
 }

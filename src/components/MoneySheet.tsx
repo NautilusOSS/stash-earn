@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button";
 import { AmountKeypad } from "./AmountKeypad";
 import { useBlinkConfigured } from "@/hooks/useBlinkConfigured";
+import { useDynamicConfigured } from "@/hooks/useDynamicConfigured";
 import { useWithdrawableBalance } from "@/hooks/useWithdrawableBalance";
 import { useEarnWithdraw } from "@/hooks/useEarnWithdraw";
 import { useStashDeposit, type StashDepositMethod } from "@/hooks/useStashDeposit";
@@ -12,11 +13,15 @@ import { atomicToUsdc } from "@/lib/privy/earn-amount";
 import { truncateAddress } from "@/lib/privy/constants";
 import { getWithdrawAddress } from "@/lib/privy/profile";
 import { usePrivy } from "@privy-io/react-auth";
-import { CreditCard, Wallet, Zap, Check, Loader2 } from "lucide-react";
+import { CreditCard, Wallet, Zap, Check, Loader2, Coins } from "lucide-react";
 import { toast } from "sonner";
 
 const BlinkDepositPanel = lazy(() =>
   import("./BlinkDepositPanel").then((m) => ({ default: m.BlinkDepositPanel })),
+);
+
+const DynamicFlowDepositPanel = lazy(() =>
+  import("./DynamicFlowDepositPanel").then((m) => ({ default: m.DynamicFlowDepositPanel })),
 );
 
 type Mode = "deposit" | "withdraw";
@@ -33,6 +38,12 @@ const depositMethods = [
     label: "Crypto account",
     sub: "Transfer USDC from MetaMask, Coinbase, etc.",
     icon: Wallet,
+  },
+  {
+    id: "flow" as const,
+    label: "Any crypto",
+    sub: "ETH, USDC, or any token · settles as USDC on Base",
+    icon: Coins,
   },
   {
     id: "blink" as const,
@@ -68,6 +79,7 @@ export function MoneySheet({
   } = useWithdrawableBalance(walletAddress);
   const { deposit, isSubmitting: isDepositing, error: depositError } = useStashDeposit(walletAddress);
   const { configured: blinkConfigured } = useBlinkConfigured();
+  const { configured: flowConfigured } = useDynamicConfigured();
   const {
     withdraw,
     isSubmitting: isWithdrawing,
@@ -76,21 +88,26 @@ export function MoneySheet({
   } = useEarnWithdraw(walletAddress);
 
   const [amount, setAmount] = useState("0");
-  const [depositMethod, setDepositMethod] = useState<StashDepositMethod | "blink">("fiat");
+  const [depositMethod, setDepositMethod] = useState<StashDepositMethod | "blink" | "flow">("fiat");
   const [withdrawRawAmount, setWithdrawRawAmount] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [blinkError, setBlinkError] = useState<string | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
 
   const numeric = Number(amount) || 0;
   const isBlinkDeposit = mode === "deposit" && depositMethod === "blink";
+  const isFlowDeposit = mode === "deposit" && depositMethod === "flow";
   const isSubmitting = mode === "deposit" ? isDepositing : isWithdrawing;
   const submitError =
     mode === "deposit"
       ? isBlinkDeposit
         ? blinkError
-        : depositError
+        : isFlowDeposit
+          ? flowError
+          : depositError
       : withdrawError;
-  const canSubmitPrivy = numeric > 0 && !isDepositing && depositMethod !== "blink";
+  const canSubmitPrivy =
+    numeric > 0 && !isDepositing && depositMethod !== "blink" && depositMethod !== "flow";
   const canSubmitWithdraw =
     withdrawAddressConfigured &&
     canWithdrawNow &&
@@ -105,6 +122,7 @@ export function MoneySheet({
     setDone(false);
     setDepositMethod("fiat");
     setBlinkError(null);
+    setFlowError(null);
   };
 
   const finishSuccess = () => {
@@ -116,7 +134,7 @@ export function MoneySheet({
   };
 
   const handlePrivySubmit = async () => {
-    if (!canSubmitPrivy || depositMethod === "blink") return;
+    if (!canSubmitPrivy) return;
 
     const ok = await deposit(numeric, depositMethod);
     if (!ok) return;
@@ -126,6 +144,11 @@ export function MoneySheet({
 
   const handleBlinkSuccess = () => {
     toast.success("Blink deposit complete. Moving USDC into yield when it lands…");
+    finishSuccess();
+  };
+
+  const handleFlowSuccess = () => {
+    toast.success("Deposit complete. Moving USDC into yield when it lands…");
     finishSuccess();
   };
 
@@ -163,7 +186,7 @@ export function MoneySheet({
   ].filter(Boolean);
   const description =
     mode === "deposit"
-      ? "Debit card, crypto account, or Blink. Starts earning yield when USDC arrives."
+      ? "Debit card, crypto account, any crypto, or Blink. Starts earning yield when USDC arrives."
       : withdrawAddressConfigured
         ? voiBalance > 0 && maxWithdraw < totalBalance
           ? `${fmtUSD(totalBalance)} total · ${withdrawableLabel} withdrawable now · ${truncateAddress(withdrawAddress!)}`
@@ -172,7 +195,7 @@ export function MoneySheet({
 
   // Blink mounts its iframe on document.body. Radix modal dialogs call hideOthers()
   // on siblings, which breaks WebAuthn passkey create/get inside the Blink iframe.
-  const sheetModal = !isBlinkDeposit;
+  const sheetModal = !isBlinkDeposit && !isFlowDeposit;
 
   return (
     <Sheet
@@ -294,6 +317,7 @@ export function MoneySheet({
                 <div className="overflow-hidden rounded-2xl border border-border bg-card">
                   {depositMethods.map((option, index) => {
                     if (option.id === "blink" && !blinkConfigured) return null;
+                    if (option.id === "flow" && !flowConfigured) return null;
 
                     const Icon = option.icon;
                     const active = depositMethod === option.id;
@@ -304,6 +328,7 @@ export function MoneySheet({
                         onClick={() => {
                           setDepositMethod(option.id);
                           setBlinkError(null);
+                          setFlowError(null);
                         }}
                         className={
                           "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors " +
@@ -345,6 +370,23 @@ export function MoneySheet({
                     amount={numeric}
                     onSuccess={handleBlinkSuccess}
                     onErrorMessage={setBlinkError}
+                  />
+                </Suspense>
+              </div>
+            ) : mode === "deposit" && isFlowDeposit ? (
+              <div className="mt-6">
+                <Suspense
+                  fallback={
+                    <div className="flex h-14 items-center justify-center rounded-2xl bg-secondary/40">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                >
+                  <DynamicFlowDepositPanel
+                    walletAddress={walletAddress}
+                    amount={numeric}
+                    onSuccess={handleFlowSuccess}
+                    onErrorMessage={setFlowError}
                   />
                 </Suspense>
               </div>

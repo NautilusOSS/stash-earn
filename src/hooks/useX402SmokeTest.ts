@@ -8,23 +8,13 @@ import {
   formatX402ClientError,
   getX402ProtectedSmokeTestUrl,
   parseX402DollarAmount,
+  type X402BridgeResponse,
   X402_SMOKE_TEST_AMOUNT,
 } from "@/lib/x402/client";
 import { createPrivyX402Signer } from "@/lib/x402/privy-signer";
 import { fetchWalletUsdcBalance } from "@/lib/privy/usdcBalance";
 
-export type X402SmokeTestResult = {
-  resource: string;
-  message: string;
-  timestamp?: string;
-  voiUsdc?: {
-    recipient?: string;
-    amountAtomic?: string;
-    txId?: string;
-    skipped?: string;
-    error?: string;
-  };
-};
+export type X402SmokeTestResult = X402BridgeResponse;
 
 export function useX402SmokeTest(walletAddress: string | undefined) {
   const { wallets } = useWallets();

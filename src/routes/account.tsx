@@ -1,14 +1,25 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
+import { AutoEarnSheet } from "@/components/AutoEarnSheet";
 import { ProfileEditSheet } from "@/components/ProfileEditSheet";
 import { WithdrawAddressSheet } from "@/components/WithdrawAddressSheet";
-import { UserCircle, ShieldCheck, Bell, LifeBuoy, ChevronRight, LogOut, ArrowUpFromLine } from "lucide-react";
+import {
+  UserCircle,
+  ShieldCheck,
+  Bell,
+  LifeBuoy,
+  ChevronRight,
+  LogOut,
+  ArrowUpFromLine,
+  Sparkles,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { isDebugMode } from "@/lib/debug";
-import { getPreferredName, getWithdrawAddress, hasWithdrawAddress } from "@/lib/privy/profile";
+import { getAutoEarnDestination, getPreferredName, getWithdrawAddress, hasWithdrawAddress } from "@/lib/privy/profile";
+import { getAutoEarnDestinationLabel } from "@/lib/stash/auto-earn";
 import { truncateAddress } from "@/lib/privy/constants";
 import {
   getLoginMethodLabel,
@@ -66,6 +77,7 @@ function AccountPage() {
   const { user, logout } = usePrivy();
   const [profileOpen, setProfileOpen] = useState(false);
   const [withdrawAddressOpen, setWithdrawAddressOpen] = useState(false);
+  const [autoEarnOpen, setAutoEarnOpen] = useState(false);
 
   const displayName = getUserDisplayName(user);
   const preferredName = getPreferredName(user);
@@ -78,6 +90,8 @@ function AccountPage() {
   const walletAddress = getUserWalletAddress(user);
   const debug = isDebugMode();
 
+  const autoEarnDestination = getAutoEarnDestination(user);
+
   const settingsItems: Array<{
     icon: typeof UserCircle;
     label: string;
@@ -89,6 +103,12 @@ function AccountPage() {
       label: "Profile",
       sub: preferredName ? `${preferredName} · name & avatar` : "Set your preferred name",
       onClick: () => setProfileOpen(true),
+    },
+    {
+      icon: Sparkles,
+      label: "Auto earn",
+      sub: getAutoEarnDestinationLabel(autoEarnDestination),
+      onClick: () => setAutoEarnOpen(true),
     },
     {
       icon: ArrowUpFromLine,
@@ -186,6 +206,7 @@ function AccountPage() {
 
       <ProfileEditSheet open={profileOpen} onOpenChange={setProfileOpen} />
       <WithdrawAddressSheet open={withdrawAddressOpen} onOpenChange={setWithdrawAddressOpen} />
+      <AutoEarnSheet open={autoEarnOpen} onOpenChange={setAutoEarnOpen} />
     </MobileShell>
   );
 }

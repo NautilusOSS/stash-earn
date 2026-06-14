@@ -12,10 +12,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBlinkConfigured } from "@/hooks/useBlinkConfigured";
-import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { useAutoEarn } from "@/hooks/useAutoEarn";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
-import { useEarnDeposit } from "@/hooks/useEarnDeposit";
-import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { getBlinkDepositTarget, getBlinkMerchantIdClient } from "@/lib/blink/config";
 import { fetchWalletUsdcBalance } from "@/lib/privy/usdcBalance";
 import { validateEvmAddress } from "@/lib/xchain/validate";
@@ -30,8 +28,7 @@ const BLINK_EARN_MAX_WAIT_MS = 300_000;
 export function useBlinkStashDeposit(walletAddress: string | undefined) {
   const { getAccessToken } = usePrivy();
   const queryClient = useQueryClient();
-  const { deposit: depositToEarn } = useEarnDeposit(walletAddress);
-  const { configured: earnConfigured } = useEarnVaultDetails();
+  const { applyAutoEarn } = useAutoEarn(walletAddress);
   const { configured, environment } = useBlinkConfigured();
   const depositTarget = getBlinkDepositTarget(environment);
   const merchantId = getBlinkMerchantIdClient();
@@ -129,29 +126,20 @@ export function useBlinkStashDeposit(walletAddress: string | undefined) {
       await queryClient.invalidateQueries({
         queryKey: walletUsdcBalanceQueryKey(normalizedAddress),
       });
-      await queryClient.invalidateQueries({
-        queryKey: earnPositionQueryKey(normalizedAddress),
-      });
     },
     [queryClient],
   );
 
-  const scheduleEarnDepositAfterBlink = useCallback(
+  const scheduleAutoEarnAfterBlink = useCallback(
     (amount: number, normalizedAddress: `0x${string}`) => {
-      if (!earnConfigured) return;
-
       void (async () => {
         const start = Date.now();
         while (Date.now() - start < BLINK_EARN_MAX_WAIT_MS) {
           try {
             const balance = await fetchWalletUsdcBalance(normalizedAddress);
             if (balance >= amount) {
-              const action = await depositToEarn(amount);
-              if (action) {
-                await invalidateBalances(normalizedAddress);
-                toast.success("USDC is now earning yield.");
-                return;
-              }
+              const target = await applyAutoEarn(amount, { notify: true });
+              if (target) return;
             }
           } catch {
             // USDC may still be bridging into the Privy wallet.
@@ -161,11 +149,11 @@ export function useBlinkStashDeposit(walletAddress: string | undefined) {
 
         toast.message("Blink deposit received", {
           description:
-            "USDC may still be settling on Base. Yield will start once it lands in your wallet.",
+            "USDC may still be settling on Base. Auto earn will run once it lands in your wallet.",
         });
       })();
     },
-    [earnConfigured, depositToEarn, invalidateBalances],
+    [applyAutoEarn],
   );
 
   const depositWithBlink = useCallback(
@@ -203,7 +191,7 @@ export function useBlinkStashDeposit(walletAddress: string | undefined) {
 
         const depositedAmount = depositResult.preview?.amount ?? amount;
         await invalidateBalances(validation.normalized);
-        scheduleEarnDepositAfterBlink(depositedAmount, validation.normalized);
+        scheduleAutoEarnAfterBlink(depositedAmount, validation.normalized);
 
         return { ok: true as const };
       } catch (err) {
@@ -228,7 +216,7 @@ export function useBlinkStashDeposit(walletAddress: string | undefined) {
       walletAddress,
       depositTarget.chainId,
       depositTarget.token,
-      scheduleEarnDepositAfterBlink,
+      scheduleAutoEarnAfterBlink,
       invalidateBalances,
     ],
   );

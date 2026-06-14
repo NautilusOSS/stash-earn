@@ -5,6 +5,8 @@ import { base } from "viem/chains";
 const BASE_NETWORK = "eip155:8453" as const;
 const SMOKE_TEST_AMOUNT = "$0.01";
 const PROTECTED_PATH = "/api/x402/protected";
+export const X402_BRIDGE_PATH = "/api/x402/bridge";
+export const X402_MAX_BRIDGE_USDC = 100;
 
 /** Privy embedded wallet signer (see createPrivyX402Signer). */
 export type X402EvmSigner = {
@@ -102,11 +104,46 @@ export async function fetchWithX402Payment(
   return fetch(input, { ...init, headers });
 }
 
+export function formatX402DollarAmount(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Amount must be a positive dollar value.");
+  }
+  if (amount > X402_MAX_BRIDGE_USDC) {
+    throw new Error(`Amount exceeds server maximum ($${X402_MAX_BRIDGE_USDC}).`);
+  }
+  return `$${amount.toFixed(2)}`;
+}
+
+export function getX402BridgeUrl(
+  amount: number | string,
+  origin = window.location.origin,
+  path: string = X402_BRIDGE_PATH,
+): string {
+  const dollarAmount =
+    typeof amount === "number" ? formatX402DollarAmount(amount) : amount.trim();
+  const params = new URLSearchParams({ amount: dollarAmount });
+  return `${origin}${path}?${params.toString()}`;
+}
+
 export function getX402ProtectedSmokeTestUrl(origin = window.location.origin): string {
-  const params = new URLSearchParams({ amount: SMOKE_TEST_AMOUNT });
-  return `${origin}${PROTECTED_PATH}?${params.toString()}`;
+  return getX402BridgeUrl(SMOKE_TEST_AMOUNT, origin, PROTECTED_PATH);
 }
 
 export const X402_SMOKE_TEST_AMOUNT = SMOKE_TEST_AMOUNT;
+
+export type X402VoiUsdcMirror = {
+  recipient?: string;
+  amountAtomic?: string;
+  txId?: string;
+  skipped?: string;
+  error?: string;
+};
+
+export type X402BridgeResponse = {
+  resource: string;
+  message: string;
+  timestamp?: string;
+  voiUsdc?: X402VoiUsdcMirror;
+};
 
 export { formatX402ClientError, parseX402DollarAmount } from "./messages";

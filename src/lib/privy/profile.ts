@@ -1,5 +1,10 @@
 import type { User } from "@privy-io/react-auth";
 
+import {
+  DEFAULT_AUTO_EARN_DESTINATION,
+  parseAutoEarnDestination,
+  type AutoEarnDestination,
+} from "@/lib/stash/auto-earn";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
 export const PROFILE_AVATARS = ["🌻", "😀", "🚀", "🏖️", "🐶", "🌲", "☕", "❤️"] as const;
@@ -13,6 +18,8 @@ export interface UserProfile {
   avatar?: string;
   /** Base mainnet address that receives vault withdrawals. */
   withdrawAddress?: string;
+  /** Where new deposits are auto-swept to earn yield. */
+  autoEarnDestination?: AutoEarnDestination;
 }
 
 function parseWithdrawAddressFromMetadata(metadata: Record<string, unknown>) {
@@ -30,8 +37,13 @@ export function getUserProfile(user: User | null | undefined): UserProfile {
     typeof metadata.preferredName === "string" ? metadata.preferredName.trim() : undefined;
   const avatar = typeof metadata.avatar === "string" ? metadata.avatar : undefined;
   const withdrawAddress = parseWithdrawAddressFromMetadata(metadata);
+  const autoEarnDestination = parseAutoEarnDestination(metadata.autoEarnDestination);
 
-  return { preferredName, avatar, withdrawAddress };
+  return { preferredName, avatar, withdrawAddress, autoEarnDestination };
+}
+
+export function getAutoEarnDestination(user: User | null | undefined): AutoEarnDestination {
+  return getUserProfile(user).autoEarnDestination ?? DEFAULT_AUTO_EARN_DESTINATION;
 }
 
 export function getWithdrawAddress(user: User | null | undefined): string | undefined {

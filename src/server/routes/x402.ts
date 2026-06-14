@@ -65,11 +65,41 @@ export function createX402Router(): Hono {
     }),
   );
 
+  app.use(
+    `${API_PREFIX}/bridge`,
+    createPaymentGate({
+      path: `${API_PREFIX}/bridge`,
+      description: "Bridge Base USDC to Voi execution address (x402 USDC paywall)",
+    }),
+  );
+
   app.get(`${API_PREFIX}/protected`, (c) => {
     const voi = c.get("voiUsdcDistribution");
     return c.json({
       resource: "protected",
       message: "Access granted after USDC payment.",
+      timestamp: new Date().toISOString(),
+      voiUsdc: voi?.txId
+        ? {
+            recipient: voi.recipientAddress,
+            amountAtomic: voi.amountAtomic,
+            txId: voi.txId,
+          }
+        : voi
+          ? {
+              recipient: voi.recipientAddress,
+              skipped: voi.skippedReason,
+              error: voi.error,
+            }
+          : undefined,
+    });
+  });
+
+  app.get(`${API_PREFIX}/bridge`, (c) => {
+    const voi = c.get("voiUsdcDistribution");
+    return c.json({
+      resource: "bridge",
+      message: "Base USDC received; matching USDC sent on Voi.",
       timestamp: new Date().toISOString(),
       voiUsdc: voi?.txId
         ? {

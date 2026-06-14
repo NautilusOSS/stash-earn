@@ -35,3 +35,20 @@ export function resolveCompositeYield(
     detailLabel: `${label} composite yield`,
   };
 }
+
+/** Projected 1-year yield from total USDC balance and composite APY. */
+export function estimateAnnualYield(
+  totalBalance: number,
+  compositeApyDecimal: number | null,
+): number | null {
+  if (compositeApyDecimal == null || totalBalance <= 0) return null;
+  return totalBalance * compositeApyDecimal;
+}
+
+export function estimateDailyYield(
+  totalBalance: number,
+  compositeApyDecimal: number | null,
+): number | null {
+  const annual = estimateAnnualYield(totalBalance, compositeApyDecimal);
+  return annual == null ? null : annual / 365;
+}

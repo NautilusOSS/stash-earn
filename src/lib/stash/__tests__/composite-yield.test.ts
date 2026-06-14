@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCompositeYield } from "../composite-yield";
+import {
+  estimateAnnualYield,
+  resolveCompositeYield,
+} from "../composite-yield";
 
 describe("resolveCompositeYield", () => {
   it("weights earn and DorkFi APY by USDC balance", () => {
@@ -26,5 +29,11 @@ describe("resolveCompositeYield", () => {
     });
 
     expect(result?.decimal).toBeCloseTo(0.05);
+  });
+
+  it("estimates annual yield from total balance and composite APY", () => {
+    expect(estimateAnnualYield(100, 0.056)).toBeCloseTo(5.6);
+    expect(estimateAnnualYield(100, null)).toBeNull();
+    expect(estimateAnnualYield(0, 0.05)).toBeNull();
   });
 });

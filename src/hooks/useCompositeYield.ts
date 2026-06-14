@@ -3,7 +3,11 @@ import { useDorkFiUsdcPosition } from "@/hooks/useDorkFiUsdcPosition";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
-import { resolveCompositeYield } from "@/lib/stash/composite-yield";
+import {
+  estimateAnnualYield,
+  estimateDailyYield,
+  resolveCompositeYield,
+} from "@/lib/stash/composite-yield";
 
 export function useCompositeYield(walletAddress: string | undefined) {
   const {
@@ -49,12 +53,16 @@ export function useCompositeYield(walletAddress: string | undefined) {
     apyLoading,
   });
 
+  const compositeApyDecimal = composite?.decimal ?? null;
+
   return {
     totalBalance,
     earningBalance,
-    compositeApyDecimal: composite?.decimal ?? null,
+    compositeApyDecimal,
     compositeApyLabel: composite?.label ?? null,
     compositeYieldDetail: composite?.detailLabel ?? null,
+    estimatedAnnualYield: estimateAnnualYield(totalBalance, compositeApyDecimal),
+    estimatedDailyYield: estimateDailyYield(totalBalance, compositeApyDecimal),
     apyLoading,
     isLoading,
     isFetching,

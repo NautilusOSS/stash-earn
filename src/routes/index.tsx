@@ -7,7 +7,6 @@ import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { useCompositeYield } from "@/hooks/useCompositeYield";
-import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
@@ -34,13 +33,13 @@ function Home() {
   const { apy: fallbackApy, transactions } = useStash();
   const walletAddress = getUserWalletAddress(user);
   const { baseBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
-  const { earnedYield, isLoading: positionLoading } = useEarnPosition(walletAddress);
   const { configured: earnConfigured } = useEarnVaultDetails();
   const {
     totalBalance,
     earningBalance,
-    compositeApyDecimal,
     compositeApyLabel,
+    estimatedAnnualYield,
+    estimatedDailyYield,
     apyLoading,
     isLoading: compositeLoading,
   } = useCompositeYield(walletAddress);
@@ -50,12 +49,10 @@ function Home() {
   const avatar = getUserAvatar(user);
   const greeting = getTimeBasedGreeting();
 
-  const balanceLoading = walletLoading || positionLoading || compositeLoading;
-  const apy = compositeApyDecimal ?? fallbackApy;
+  const balanceLoading = walletLoading || compositeLoading;
   const apyDisplay = apyLoading ? "…" : compositeApyLabel ?? `${(fallbackApy * 100).toFixed(2)}%`;
-
-  const annual = totalBalance * apy;
-  const daily = annual / 365;
+  const annualLabel =
+    estimatedAnnualYield == null ? "—" : fmtUSD(estimatedAnnualYield);
 
   const balanceLabel = balanceLoading ? "—" : fmtUSD(totalBalance).replace("$", "");
   const [dollars, cents] = balanceLabel.includes(".")
@@ -108,9 +105,15 @@ function Home() {
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/60">
-              Yield earned
+              Est yield 1y
             </p>
-            <p className="mt-1 text-base font-semibold text-positive">+{fmtUSD(earnedYield)}</p>
+            <p className="mt-1 text-base font-semibold text-positive">
+              {balanceLoading || apyLoading
+                ? "—"
+                : estimatedAnnualYield == null
+                  ? "+$0"
+                  : `+${annualLabel}`}
+            </p>
           </div>
         </div>
         {earnConfigured && baseBalance > 0 && (
@@ -146,13 +149,22 @@ function Home() {
           </div>
           <div>
             <p className="text-[15px] font-medium">
-              {earningBalance > 0
-                ? `You could earn about ${fmtUSD(daily)} today.`
-                : "Deposit USDC to start earning."}
+              {earningBalance > 0 && estimatedDailyYield != null
+                ? `You could earn about ${fmtUSD(estimatedDailyYield)} today.`
+                : earningBalance > 0 && apyLoading
+                  ? "Loading yield estimate…"
+                  : earningBalance > 0
+                    ? "Yield estimate unavailable."
+                    : "Deposit USDC to start earning."}
             </p>
             <p className="text-xs text-muted-foreground">
-              At {apyDisplay} APY, {fmtUSD(totalBalance)} earns about{" "}
-              {fmtUSD(annual, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} a year.
+              {estimatedAnnualYield != null ? (
+                <>
+                  At {apyDisplay} APY, {fmtUSD(totalBalance)} earns about {annualLabel} a year.
+                </>
+              ) : (
+                <>Composite yield uses your total balance and Earn + DorkFi APY weights.</>
+              )}
             </p>
           </div>
         </div>

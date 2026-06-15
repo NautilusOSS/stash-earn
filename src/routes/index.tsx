@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, Sparkles, ChevronRight } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Sparkles, ChevronRight, Loader2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { useCompositeYield } from "@/hooks/useCompositeYield";
-import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
+import { useAutoEarn } from "@/hooks/useAutoEarn";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
@@ -33,7 +33,7 @@ function Home() {
   const { apy: fallbackApy, transactions } = useStash();
   const walletAddress = getUserWalletAddress(user);
   const { baseBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
-  const { configured: earnConfigured } = useEarnVaultDetails();
+  const { applyAutoEarn, resolvedTarget } = useAutoEarn(walletAddress);
   const {
     totalBalance,
     earningBalance,
@@ -44,6 +44,7 @@ function Home() {
     isLoading: compositeLoading,
   } = useCompositeYield(walletAddress);
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
+  const [isEarning, setIsEarning] = useState(false);
 
   const preferredName = getPreferredName(user) ?? "there";
   const avatar = getUserAvatar(user);
@@ -59,6 +60,17 @@ function Home() {
     ? balanceLabel.split(".")
     : [balanceLabel, "00"];
   const recent = transactions.slice(0, 4);
+  const canEarnFromWallet = baseBalance > 0 && resolvedTarget != null;
+
+  const handleEarn = async () => {
+    if (!canEarnFromWallet || isEarning) return;
+    setIsEarning(true);
+    try {
+      await applyAutoEarn(baseBalance, { notify: true });
+    } finally {
+      setIsEarning(false);
+    }
+  };
 
   return (
     <MobileShell>
@@ -116,10 +128,27 @@ function Home() {
             </p>
           </div>
         </div>
-        {earnConfigured && baseBalance > 0 && (
-          <p className="mt-4 text-xs text-primary-foreground/60">
-            {fmtUSD(baseBalance)} in wallet ready to deposit
-          </p>
+        {canEarnFromWallet && (
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-primary-foreground/10 pt-4">
+            <p className="text-xs text-primary-foreground/60">
+              {fmtUSD(baseBalance)} in wallet ready to earn
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleEarn()}
+              disabled={isEarning || walletLoading}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary-foreground px-4 py-1.5 text-xs font-semibold text-primary transition-opacity disabled:opacity-60"
+            >
+              {isEarning ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Earning…
+                </>
+              ) : (
+                "Earn"
+              )}
+            </button>
+          </div>
         )}
       </section>
 

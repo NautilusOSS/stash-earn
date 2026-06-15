@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
+import { YieldBreakdownSheet } from "@/components/YieldBreakdownSheet";
 import { useCompositeYield } from "@/hooks/useCompositeYield";
 import { useAutoEarn } from "@/hooks/useAutoEarn";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
@@ -45,6 +46,7 @@ function Home() {
   } = useCompositeYield(walletAddress);
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
   const [isEarning, setIsEarning] = useState(false);
+  const [yieldBreakdownOpen, setYieldBreakdownOpen] = useState(false);
 
   const preferredName = getPreferredName(user) ?? "there";
   const avatar = getUserAvatar(user);
@@ -171,12 +173,16 @@ function Home() {
       </div>
 
       {/* Earnings insight */}
-      <section className="mt-6 rounded-2xl border border-border bg-card p-5">
+      <button
+        type="button"
+        onClick={() => setYieldBreakdownOpen(true)}
+        className="mt-6 w-full rounded-2xl border border-border bg-card p-5 text-left transition-colors active:bg-secondary/40"
+      >
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-positive/15 text-positive">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-positive/15 text-positive">
             <Sparkles className="h-4 w-4" strokeWidth={2} />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[15px] font-medium">
               {earningBalance > 0 && estimatedDailyYield != null
                 ? `You could earn about ${fmtUSD(estimatedDailyYield)} today.`
@@ -196,8 +202,9 @@ function Home() {
               )}
             </p>
           </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
-      </section>
+      </button>
 
       {/* Activity */}
       <section className="mt-7">
@@ -218,6 +225,12 @@ function Home() {
           ))}
         </div>
       </section>
+
+      <YieldBreakdownSheet
+        open={yieldBreakdownOpen}
+        onOpenChange={setYieldBreakdownOpen}
+        walletAddress={walletAddress}
+      />
 
       <MoneySheet
         mode={sheet ?? "deposit"}

@@ -1,8 +1,12 @@
+import { useMemo } from "react";
+
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { useDorkFiUsdcPosition } from "@/hooks/useDorkFiUsdcPosition";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
+import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
+import { EARN_VAULTS } from "@/lib/privy/vaults";
 import {
   estimateAnnualYield,
   estimateDailyYield,
@@ -17,14 +21,12 @@ export function useCompositeYield(walletAddress: string | undefined) {
   } = useWalletUsdcBalance(walletAddress);
   const {
     assetsInVault,
+    vaultPositions,
     isLoading: positionLoading,
     isFetching: positionFetching,
   } = useEarnPosition(walletAddress);
-  const {
-    configured: earnConfigured,
-    userApyDecimal,
-    isLoading: vaultDetailsLoading,
-  } = useEarnVaultDetails();
+  const { apyDecimals, isLoading: vaultApyLoading } = useEarnVaultApys();
+  const { configured: earnConfigured } = useEarnVaultDetails();
   const {
     balance: dorkFiBalance,
     isLoading: dorkFiLoading,
@@ -39,7 +41,24 @@ export function useCompositeYield(walletAddress: string | undefined) {
   const earnBalance = earnConfigured ? assetsInVault : 0;
   const totalBalance = earnBalance + walletTotal + dorkFiBalance;
   const earningBalance = earnBalance + dorkFiBalance;
-  const apyLoading = vaultDetailsLoading || dorkFiApyLoading;
+
+  const userApyDecimal = useMemo(() => {
+    if (!earnConfigured || earnBalance <= 0) return null;
+
+    let weighted = 0;
+    for (const vault of EARN_VAULTS) {
+      const entry = vaultPositions.find((position) => position.vaultId === vault.id);
+      const balance = entry?.assetsInVault ?? 0;
+      const apy = apyDecimals[vault.id as keyof typeof apyDecimals];
+      if (balance > 0 && apy != null) {
+        weighted += balance * apy;
+      }
+    }
+
+    return weighted > 0 ? weighted / earnBalance : null;
+  }, [earnConfigured, earnBalance, vaultPositions, apyDecimals]);
+
+  const apyLoading = vaultApyLoading || dorkFiApyLoading;
   const isLoading = walletLoading || positionLoading || dorkFiLoading;
   const isFetching =
     walletFetching || positionFetching || dorkFiFetching || dorkFiApyFetching;

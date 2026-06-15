@@ -121,6 +121,10 @@ export function depositMethodNote(method: string): string {
   }
 }
 
-export function earnTargetNote(target: "earn_vault" | "dorkfi"): string {
-  return target === "earn_vault" ? "Earn vault" : "DorkFi";
+import { getEarnVaultName } from "@/lib/privy/vaults";
+import type { ResolvedAutoEarnTarget } from "@/lib/stash/auto-earn";
+
+export function earnTargetNote(target: ResolvedAutoEarnTarget): string {
+  if (target === "dorkfi") return "DorkFi";
+  return getEarnVaultName(target);
 }

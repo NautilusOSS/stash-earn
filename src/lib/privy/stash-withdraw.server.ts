@@ -12,27 +12,23 @@ import { getAvmUsdcHolding } from "@/lib/voi/avm-usdc-balance.server";
 
 import type { PrivyAuthorizationContext } from "./privy-api.server";
 import {
-  getEarnPositionForUser,
+  getAllEarnVaultBalances,
   pollEarnAction,
   pollWalletAction,
   walletActionFailureMessage,
   withdrawFromEarnVault,
+  type EarnVaultBalance,
 } from "./earn.server";
 import type { EarnAction, WalletAction } from "./earn.types";
 import { resolveEmbeddedWalletId, verifyPrivyAccessToken } from "./session.server";
 import { mapWalletAction, transferUsdcOnBase } from "./transfer.server";
 import { buildUsdcTransferBody } from "./transfer-body";
 import { getServerConfig } from "../config.server";
-
-function getVaultId(): string {
-  const vaultId = getServerConfig().privy.vaultId;
-  if (!vaultId) {
-    throw new Error(
-      "Privy Earn is not configured. Set PRIVY_VAULT_ID from Dashboard → Earn.",
-    );
-  }
-  return vaultId;
-}
+import { EARN_VAULTS } from "./vaults";
+import {
+  vaultTransferActionId,
+  vaultWithdrawActionId,
+} from "./stash-withdraw.types";
 
 export type StashWithdrawExecutionResult = {
   destinationAddress: `0x${string}`;
@@ -60,17 +56,36 @@ async function loadWithdrawBuckets(
   accessToken: string,
   evmAddress: string,
 ): Promise<WithdrawBalanceBuckets> {
-  const [walletAtomic, position, addresses] = await Promise.all([
+  const [walletAtomic, vaultBalances, addresses] = await Promise.all([
     fetchWalletUsdcBalanceAtomic(evmAddress as `0x${string}`),
-    getEarnPositionForUser(accessToken, evmAddress),
+    getAllEarnVaultBalances(accessToken, evmAddress),
     deriveXChainAddresses(evmAddress),
   ]);
 
-  const vaultAtomic = BigInt(position?.assetsInVaultAtomic ?? "0");
+  const vaultAtomic = vaultBalances.reduce((sum, entry) => sum + entry.atomic, 0n);
   const voiHolding = await getAvmUsdcHolding(addresses.voiExecutionAddress);
   const voiAtomic = BigInt(voiHolding?.amountAtomic ?? "0");
 
   return { walletAtomic, vaultAtomic, voiAtomic };
+}
+
+function planVaultWithdrawals(
+  fromVault: bigint,
+  vaultBalances: EarnVaultBalance[],
+): { vaultId: string; amount: bigint }[] {
+  let remaining = fromVault;
+  const chunks: { vaultId: string; amount: bigint }[] = [];
+
+  for (const vault of EARN_VAULTS) {
+    const balance = vaultBalances.find((entry) => entry.vaultId === vault.id);
+    if (!balance || balance.atomic <= 0n || remaining <= 0n) continue;
+
+    const take = remaining < balance.atomic ? remaining : balance.atomic;
+    chunks.push({ vaultId: vault.id, amount: take });
+    remaining -= take;
+  }
+
+  return chunks;
 }
 
 function transferBody(
@@ -119,6 +134,8 @@ async function buildWithdrawActions(
   const requestedAtomic = BigInt(rawAmount);
   const buckets = await loadWithdrawBuckets(accessToken, evmAddress);
   const withdrawalPlan = planWithdrawal(requestedAtomic, buckets);
+  const vaultBalances = await getAllEarnVaultBalances(accessToken, evmAddress);
+  const vaultWithdrawals = planVaultWithdrawals(withdrawalPlan.fromVault, vaultBalances);
 
   if (withdrawalPlan.fromVoi > 0n) {
     const baseCap = walletPlusVaultAtomic(buckets);
@@ -131,7 +148,6 @@ async function buildWithdrawActions(
 
   const { userId } = await verifyPrivyAccessToken(accessToken);
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
-  const vaultId = getVaultId();
   const walletPath = `/wallets/${encodeURIComponent(walletId)}/transfer`;
   const vaultWithdrawPath = `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/withdraw`;
 
@@ -145,16 +161,16 @@ async function buildWithdrawActions(
     });
   }
 
-  if (withdrawalPlan.fromVault > 0n) {
+  for (const chunk of vaultWithdrawals) {
     actions.push({
-      id: "vault-withdraw",
+      id: vaultWithdrawActionId(chunk.vaultId),
       path: vaultWithdrawPath,
-      body: { vault_id: vaultId, raw_amount: withdrawalPlan.fromVault.toString() },
+      body: { vault_id: chunk.vaultId, raw_amount: chunk.amount.toString() },
     });
     actions.push({
-      id: "transfer-vault",
+      id: vaultTransferActionId(chunk.vaultId),
       path: walletPath,
-      body: transferBody(destinationAddress, withdrawalPlan.fromVault),
+      body: transferBody(destinationAddress, chunk.amount),
     });
   }
 
@@ -163,6 +179,10 @@ async function buildWithdrawActions(
       fromWallet: withdrawalPlan.fromWallet.toString(),
       fromVault: withdrawalPlan.fromVault.toString(),
       fromVoi: withdrawalPlan.fromVoi.toString(),
+      vaultWithdrawals: vaultWithdrawals.map((chunk) => ({
+        vaultId: chunk.vaultId,
+        amount: chunk.amount.toString(),
+      })),
     },
     actions,
   };
@@ -276,44 +296,57 @@ export async function executeStashWithdraw(
   }
 
   if (fromVault > 0n) {
-    const vaultRaw = fromVault.toString();
-    const vaultSigned = requireSignedAction(signedActions, "vault-withdraw");
-    const withdrawResult = await withdrawFromEarnVault(
-      accessToken,
-      evmAddress,
-      vaultRaw,
-      authCtx,
-      vaultSigned
-        ? {
-            authorizationSignature: vaultSigned.authorizationSignature,
-            requestExpiry: vaultSigned.requestExpiry,
-          }
-        : undefined,
-      vaultSigned?.body,
-    );
-    withdrawAction = await pollEarnAction(withdrawResult.action.walletId, withdrawResult.action.id);
+    const vaultBalances = await getAllEarnVaultBalances(accessToken, evmAddress);
+    const vaultWithdrawals = planVaultWithdrawals(fromVault, vaultBalances);
 
-    if (withdrawAction.status === "failed" || withdrawAction.status === "rejected") {
-      return {
-        destinationAddress,
-        withdrawAction,
-        transferActions,
-        plan,
-      };
-    }
-
-    await waitForWalletUsdc(evmAddress as `0x${string}`, fromVault);
-
-    transferActions.push(
-      await transferAtomic(
+    for (const chunk of vaultWithdrawals) {
+      const vaultRaw = chunk.amount.toString();
+      const vaultSigned = requireSignedAction(
+        signedActions,
+        vaultWithdrawActionId(chunk.vaultId),
+      );
+      const withdrawResult = await withdrawFromEarnVault(
         accessToken,
         evmAddress,
-        destinationAddress,
-        fromVault,
+        vaultRaw,
         authCtx,
-        requireSignedAction(signedActions, "transfer-vault"),
-      ),
-    );
+        vaultSigned
+          ? {
+              authorizationSignature: vaultSigned.authorizationSignature,
+              requestExpiry: vaultSigned.requestExpiry,
+            }
+          : undefined,
+        vaultSigned?.body,
+        chunk.vaultId,
+      );
+      const chunkAction = await pollEarnAction(
+        withdrawResult.action.walletId,
+        withdrawResult.action.id,
+      );
+      withdrawAction = chunkAction;
+
+      if (chunkAction.status === "failed" || chunkAction.status === "rejected") {
+        return {
+          destinationAddress,
+          withdrawAction,
+          transferActions,
+          plan,
+        };
+      }
+
+      await waitForWalletUsdc(evmAddress as `0x${string}`, chunk.amount);
+
+      transferActions.push(
+        await transferAtomic(
+          accessToken,
+          evmAddress,
+          destinationAddress,
+          chunk.amount,
+          authCtx,
+          requireSignedAction(signedActions, vaultTransferActionId(chunk.vaultId)),
+        ),
+      );
+    }
   }
 
   return {

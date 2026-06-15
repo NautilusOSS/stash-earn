@@ -1,10 +1,28 @@
-export const AUTO_EARN_DESTINATIONS = ["earn_vault", "dorkfi", "highest_yield"] as const;
+import {
+  DEFAULT_EARN_VAULT_ID,
+  EARN_VAULTS,
+  getEarnVaultName,
+  isKnownEarnVaultId,
+} from "@/lib/privy/vaults";
 
-export type AutoEarnDestination = (typeof AUTO_EARN_DESTINATIONS)[number];
+export const EARN_VAULT_DESTINATION_IDS = EARN_VAULTS.map((vault) => vault.id);
 
-export type ResolvedAutoEarnTarget = "earn_vault" | "dorkfi";
+export type EarnVaultDestinationId = (typeof EARN_VAULTS)[number]["id"];
 
-export const DEFAULT_AUTO_EARN_DESTINATION: AutoEarnDestination = "earn_vault";
+export const NON_VAULT_AUTO_EARN_DESTINATIONS = ["dorkfi", "highest_yield"] as const;
+
+export type NonVaultAutoEarnDestination = (typeof NON_VAULT_AUTO_EARN_DESTINATIONS)[number];
+
+export const AUTO_EARN_DESTINATIONS = [
+  ...EARN_VAULT_DESTINATION_IDS,
+  ...NON_VAULT_AUTO_EARN_DESTINATIONS,
+] as const;
+
+export type AutoEarnDestination = EarnVaultDestinationId | NonVaultAutoEarnDestination;
+
+export type ResolvedAutoEarnTarget = EarnVaultDestinationId | "dorkfi";
+
+export const DEFAULT_AUTO_EARN_DESTINATION: AutoEarnDestination = DEFAULT_EARN_VAULT_ID;
 
 export type AutoEarnDestinationOption = {
   id: AutoEarnDestination;
@@ -13,11 +31,11 @@ export type AutoEarnDestinationOption = {
 };
 
 export const AUTO_EARN_OPTIONS: AutoEarnDestinationOption[] = [
-  {
-    id: "earn_vault",
-    label: "Earn vault",
-    description: "Sweep Base USDC into your Privy Earn vault after each deposit.",
-  },
+  ...EARN_VAULTS.map((vault) => ({
+    id: vault.id as AutoEarnDestination,
+    label: vault.name,
+    description: `Sweep Base USDC into ${vault.name} after each deposit.`,
+  })),
   {
     id: "dorkfi",
     label: "DorkFi",
@@ -27,11 +45,21 @@ export const AUTO_EARN_OPTIONS: AutoEarnDestinationOption[] = [
   {
     id: "highest_yield",
     label: "Highest yield",
-    description: "Automatically choose Earn vault or DorkFi based on the better APY at deposit time.",
+    description:
+      "Automatically choose Gauntlet USDC Prime, Steakhouse Prime USDC, or DorkFi based on the best APY at deposit time.",
   },
 ];
 
+export function isEarnVaultDestination(
+  destination: AutoEarnDestination,
+): destination is EarnVaultDestinationId {
+  return isKnownEarnVaultId(destination);
+}
+
 export function parseAutoEarnDestination(value: unknown): AutoEarnDestination {
+  if (value === "earn_vault") {
+    return DEFAULT_AUTO_EARN_DESTINATION;
+  }
   if (typeof value === "string" && AUTO_EARN_DESTINATIONS.includes(value as AutoEarnDestination)) {
     return value as AutoEarnDestination;
   }
@@ -39,12 +67,31 @@ export function parseAutoEarnDestination(value: unknown): AutoEarnDestination {
 }
 
 export function getAutoEarnDestinationLabel(destination: AutoEarnDestination): string {
-  return AUTO_EARN_OPTIONS.find((option) => option.id === destination)?.label ?? "Earn vault";
+  if (destination === "dorkfi") return "DorkFi";
+  if (destination === "highest_yield") return "Highest yield";
+  return getEarnVaultName(destination);
+}
+
+function pickHighestYieldVault(
+  earnVaultApyDecimals: Partial<Record<EarnVaultDestinationId, number | null>>,
+): EarnVaultDestinationId | null {
+  let bestVault: EarnVaultDestinationId | null = null;
+  let bestApy = -1;
+
+  for (const vault of EARN_VAULTS) {
+    const apy = earnVaultApyDecimals[vault.id as EarnVaultDestinationId];
+    if (apy != null && apy >= 0 && apy > bestApy) {
+      bestApy = apy;
+      bestVault = vault.id as EarnVaultDestinationId;
+    }
+  }
+
+  return bestVault;
 }
 
 export function resolveAutoEarnTarget(input: {
   preference: AutoEarnDestination;
-  earnApyDecimal: number | null;
+  earnVaultApyDecimals: Partial<Record<EarnVaultDestinationId, number | null>>;
   dorkFiApyDecimal: number | null;
   earnConfigured: boolean;
   /** Opted into Voi USDC with enough VOI for a DorkFi deposit. */
@@ -58,22 +105,24 @@ export function resolveAutoEarnTarget(input: {
   const dorkFiAvailable =
     input.dorkFiExecutionReady && (hasVoiUsdc || input.voiBridgeConfigured);
 
-  if (input.preference === "earn_vault") {
-    return input.earnConfigured ? "earn_vault" : null;
+  if (isEarnVaultDestination(input.preference)) {
+    return input.earnConfigured ? input.preference : null;
   }
 
   if (input.preference === "dorkfi") {
     return dorkFiAvailable ? "dorkfi" : null;
   }
 
-  const earnApy = input.earnApyDecimal ?? -1;
+  const bestVault = pickHighestYieldVault(input.earnVaultApyDecimals);
+  const bestEarnApy =
+    bestVault != null ? (input.earnVaultApyDecimals[bestVault] ?? -1) : -1;
   const dorkFiApy = input.dorkFiApyDecimal ?? -1;
-  const earnAvailable = input.earnConfigured && earnApy >= 0;
+  const earnAvailable = input.earnConfigured && bestVault != null && bestEarnApy >= 0;
 
   if (earnAvailable && dorkFiAvailable) {
-    return dorkFiApy > earnApy ? "dorkfi" : "earn_vault";
+    return dorkFiApy > bestEarnApy ? "dorkfi" : bestVault;
   }
   if (dorkFiAvailable) return "dorkfi";
-  if (earnAvailable) return "earn_vault";
+  if (earnAvailable) return bestVault;
   return null;
 }

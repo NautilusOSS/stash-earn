@@ -4,6 +4,7 @@ import { useCompositeYield } from "@/hooks/useCompositeYield";
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { useDorkFiUsdcPosition } from "@/hooks/useDorkFiUsdcPosition";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
+import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useXChainAddress } from "@/hooks/useXChainAddress";
@@ -29,15 +30,14 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
     configured: earnConfigured,
     assetsInVault,
     earnedYield,
+    vaultPositions,
     isLoading: positionLoading,
     isFetching: positionFetching,
     error: positionError,
     refetch: refetchPosition,
   } = useEarnPosition(walletAddress);
+  const { apyLabels, isLoading: vaultApyLoading } = useEarnVaultApys();
   const {
-    details: vaultDetails,
-    userApyLabel,
-    isLoading: vaultDetailsLoading,
     refetch: refetchVaultDetails,
   } = useEarnVaultDetails();
   const { voiExecutionAddress, isLoading: addressLoading } = useXChainAddress(walletAddress);
@@ -81,7 +81,7 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
         <div>
           <p className="text-xs text-muted-foreground">USDC balances</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Earn vault, DorkFi supply, Base wallet, and Voi execution ASA{" "}
+            Earn vaults, DorkFi supply, Base wallet, and Voi execution ASA{" "}
             <span className="font-mono text-foreground">{VOI_USDC_ASSET_ID}</span>
           </p>
         </div>
@@ -102,23 +102,39 @@ export function UsdcBalanceDebugSection({ walletAddress }: UsdcBalanceDebugSecti
 
       <div className="mt-3 space-y-2">
         <BalanceRow
-          label="Earn vault"
-          sub={
-            earnConfigured
-              ? vaultDetails?.vaultAddress
-                ? truncateAddress(vaultDetails.vaultAddress)
-                : vaultDetails?.name
-              : "Not configured"
-          }
+          label="Earn vaults (total)"
           value={loading ? "…" : earnConfigured ? fmtUSD(assetsInVault) : "—"}
           detail={earnVaultDetail({
             configured: earnConfigured,
             loading,
-            apyLoading: vaultDetailsLoading,
-            apyLabel: userApyLabel,
+            apyLoading: vaultApyLoading,
+            apyLabel: null,
             earnedYield,
           })}
+          valueClassName={vaultPositions.length > 1 ? "font-semibold" : undefined}
         />
+        {earnConfigured
+          ? vaultPositions.map((vault) => (
+              <BalanceRow
+                key={vault.vaultId}
+                label={vault.vaultName}
+                value={loading ? "…" : fmtUSD(vault.assetsInVault)}
+                detail={
+                  vaultApyLoading
+                    ? "Loading APY…"
+                    : apyLabels[vault.vaultId as keyof typeof apyLabels]
+                      ? `${apyLabels[vault.vaultId as keyof typeof apyLabels]} APY`
+                      : undefined
+                }
+              />
+            ))
+          : (
+              <BalanceRow
+                label="Earn vaults"
+                sub="Not configured"
+                value="—"
+              />
+            )}
         <BalanceRow
           label="AVM DorkFi USDC"
           sub={`${VOI_MAINNET_A_MARKET_USDC.symbol} · pool ${VOI_MAINNET_A_MARKET_USDC.poolId}`}

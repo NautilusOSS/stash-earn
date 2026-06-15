@@ -6,6 +6,7 @@ import { earnDepositFn, prepareEarnDepositFn } from "@/lib/api/earn.functions";
 import { usdcToAtomic } from "@/lib/privy/earn-amount";
 import type { EarnAction } from "@/lib/privy/earn.types";
 import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { getVaultId } from "@/lib/privy/constants";
 import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
 import { validateEvmAddress } from "@/lib/xchain/validate";
@@ -19,7 +20,7 @@ export function useEarnDeposit(walletAddress: string | undefined) {
   const [error, setError] = useState<string | null>(null);
 
   const deposit = useCallback(
-    async (amount: number) => {
+    async (amount: number, vaultId?: string) => {
       if (!walletAddress) {
         setError("Connect a wallet first.");
         return null;
@@ -48,11 +49,13 @@ export function useEarnDeposit(walletAddress: string | undefined) {
 
       try {
         const rawAmount = usdcToAtomic(amount);
+        const resolvedVaultId = vaultId ?? getVaultId();
         const prepared = (await prepareEarnDepositFn({
           data: {
             accessToken,
             evmAddress: validation.normalized,
             rawAmount,
+            vaultId: resolvedVaultId,
           },
         })) as { path: string; body: Record<string, unknown> };
         const clientAuth = await signWalletAction(prepared.path, prepared.body);
@@ -62,6 +65,7 @@ export function useEarnDeposit(walletAddress: string | undefined) {
             accessToken,
             evmAddress: validation.normalized,
             rawAmount,
+            vaultId: resolvedVaultId,
             clientAuth,
             signedBody: prepared.body,
           },
@@ -77,7 +81,7 @@ export function useEarnDeposit(walletAddress: string | undefined) {
 
         setLastAction(action);
         await queryClient.invalidateQueries({
-          queryKey: earnPositionQueryKey(validation.normalized),
+          queryKey: earnPositionQueryKey(validation.normalized, resolvedVaultId),
         });
         await queryClient.invalidateQueries({
           queryKey: walletUsdcBalanceQueryKey(validation.normalized),

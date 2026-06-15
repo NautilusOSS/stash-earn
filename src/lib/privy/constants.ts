@@ -1,5 +1,7 @@
 import { base } from "viem/chains";
 
+import { resolveEarnVaultId } from "./vaults";
+
 export const CHAIN = base;
 
 export const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
@@ -13,7 +15,7 @@ export function getPrivyAppId(): string {
 }
 
 export function getVaultId(): string {
-  return import.meta.env.VITE_PRIVY_VAULT_ID ?? "";
+  return resolveEarnVaultId(import.meta.env.VITE_PRIVY_VAULT_ID);
 }
 
 export function truncateAddress(address: string): string {

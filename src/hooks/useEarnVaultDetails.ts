@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getEarnConfiguredFn, getEarnVaultDetailsFn } from "@/lib/api/earn.functions";
 import { getVaultId } from "@/lib/privy/constants";
 
-export const earnVaultDetailsQueryKey = ["earn-vault-details"] as const;
+export const earnVaultDetailsQueryKey = (vaultId: string) =>
+  ["earn-vault-details", vaultId] as const;
 
 export function useEarnVaultDetails() {
   const clientVaultId = getVaultId();
@@ -18,8 +19,11 @@ export function useEarnVaultDetails() {
   const configured = Boolean(clientVaultId) || serverConfigured;
 
   const detailsQuery = useQuery({
-    queryKey: earnVaultDetailsQueryKey,
-    queryFn: async () => getEarnVaultDetailsFn(),
+    queryKey: earnVaultDetailsQueryKey(clientVaultId),
+    queryFn: async () =>
+      getEarnVaultDetailsFn({
+        data: { vaultId: clientVaultId },
+      }),
     enabled: configured,
     staleTime: 60_000,
     refetchInterval: 120_000,

@@ -1,6 +1,7 @@
 import { formatUnits } from "viem";
 
 import { getServerConfig } from "../config.server";
+import { EARN_VAULTS, getEarnVaultById, resolveEarnVaultId } from "./vaults";
 import { fetchWalletUsdcBalance } from "./usdcBalance";
 import type {
   EarnAction,
@@ -18,14 +19,12 @@ import {
 import { resolveEmbeddedWalletId, verifyPrivyAccessToken } from "./session.server";
 import type { PrivyWalletActionAuth } from "./wallet-action-auth";
 
-function getVaultId(): string {
-  const vaultId = getServerConfig().privy.vaultId;
-  if (!vaultId) {
-    throw new Error(
-      "Privy Earn is not configured. Set PRIVY_VAULT_ID from Dashboard → Earn.",
-    );
+function getVaultId(vaultId?: string): string {
+  const resolved = resolveEarnVaultId(vaultId ?? getServerConfig().privy.vaultId);
+  if (vaultId && !getEarnVaultById(resolved)) {
+    throw new Error(`Unknown earn vault: ${resolved}`);
   }
-  return vaultId;
+  return resolved;
 }
 
 function atomicToNumber(raw: string, decimals: number): number {
@@ -106,14 +105,14 @@ function mapAction(raw: Record<string, unknown>): EarnAction {
 }
 
 export function isEarnConfigured(): boolean {
-  return Boolean(getServerConfig().privy.vaultId);
+  return Boolean(resolveEarnVaultId(getServerConfig().privy.vaultId));
 }
 
-export async function getEarnVaultDetails(): Promise<EarnVaultDetails | null> {
+export async function getEarnVaultDetails(vaultId?: string): Promise<EarnVaultDetails | null> {
   if (!isEarnConfigured()) return null;
-  const vaultId = getVaultId();
+  const id = getVaultId(vaultId);
   const raw = await privyApiGet<Record<string, unknown>>(
-    `/earn/ethereum/vaults/${encodeURIComponent(vaultId)}`,
+    `/earn/ethereum/vaults/${encodeURIComponent(id)}`,
   );
   return mapVaultDetails(raw);
 }
@@ -121,15 +120,16 @@ export async function getEarnVaultDetails(): Promise<EarnVaultDetails | null> {
 export async function getEarnPositionForUser(
   accessToken: string,
   evmAddress: string,
+  vaultId?: string,
 ): Promise<EarnPosition | null> {
   if (!isEarnConfigured()) return null;
 
   const { userId } = await verifyPrivyAccessToken(accessToken);
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
-  const vaultId = getVaultId();
+  const id = getVaultId(vaultId);
 
   const raw = await privyApiGet<Record<string, unknown>>(
-    `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/vaults?vault_id=${encodeURIComponent(vaultId)}`,
+    `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/vaults?vault_id=${encodeURIComponent(id)}`,
   );
   return mapPosition(raw);
 }
@@ -141,6 +141,7 @@ export async function depositToEarnVault(
   authCtx?: PrivyAuthorizationContext,
   clientAuth?: PrivyWalletActionAuth,
   signedBody?: Record<string, unknown>,
+  vaultId?: string,
 ): Promise<EarnDepositResult> {
   const amount = BigInt(rawAmount);
   if (amount <= 0) {
@@ -149,7 +150,7 @@ export async function depositToEarnVault(
 
   const { userId } = await verifyPrivyAccessToken(accessToken);
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
-  const vaultId = getVaultId();
+  const id = getVaultId(vaultId);
 
   const walletBalance = await fetchWalletUsdcBalance(evmAddress as `0x${string}`);
   const walletAtomic = BigInt(Math.round(walletBalance * 1e6));
@@ -160,7 +161,7 @@ export async function depositToEarnVault(
   const raw = await privyWalletAction<Record<string, unknown>>(
     `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/deposit`,
     accessToken,
-    signedBody ?? { vault_id: vaultId, raw_amount: rawAmount },
+    signedBody ?? { vault_id: id, raw_amount: rawAmount },
     authCtx,
     clientAuth,
   );
@@ -175,6 +176,7 @@ export async function withdrawFromEarnVault(
   authCtx?: PrivyAuthorizationContext,
   clientAuth?: PrivyWalletActionAuth,
   signedBody?: Record<string, unknown>,
+  vaultId?: string,
 ): Promise<EarnWithdrawResult> {
   const amount = BigInt(rawAmount);
   if (amount <= 0) {
@@ -183,9 +185,9 @@ export async function withdrawFromEarnVault(
 
   const { userId } = await verifyPrivyAccessToken(accessToken);
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
-  const vaultId = getVaultId();
+  const id = getVaultId(vaultId);
 
-  const position = await getEarnPositionForUser(accessToken, evmAddress);
+  const position = await getEarnPositionForUser(accessToken, evmAddress, id);
   if (!position) {
     throw new Error("Could not load vault position.");
   }
@@ -195,7 +197,7 @@ export async function withdrawFromEarnVault(
     throw new Error("Withdrawal amount exceeds your vault balance.");
   }
 
-  const vaultDetails = await getEarnVaultDetails();
+  const vaultDetails = await getEarnVaultDetails(id);
   if (vaultDetails?.availableLiquidityUsd != null) {
     const withdrawUsd = atomicToNumber(rawAmount, position.asset.decimals);
     if (withdrawUsd > vaultDetails.availableLiquidityUsd) {
@@ -208,7 +210,7 @@ export async function withdrawFromEarnVault(
   const raw = await privyWalletAction<Record<string, unknown>>(
     `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/withdraw`,
     accessToken,
-    signedBody ?? { vault_id: vaultId, raw_amount: rawAmount },
+    signedBody ?? { vault_id: id, raw_amount: rawAmount },
     authCtx,
     clientAuth,
   );
@@ -216,11 +218,34 @@ export async function withdrawFromEarnVault(
   return { action: mapAction(raw) };
 }
 
+export type EarnVaultBalance = {
+  vaultId: string;
+  atomic: bigint;
+};
+
+export async function getAllEarnVaultBalances(
+  accessToken: string,
+  evmAddress: string,
+): Promise<EarnVaultBalance[]> {
+  const balances = await Promise.all(
+    EARN_VAULTS.map(async (vault) => {
+      const position = await getEarnPositionForUser(accessToken, evmAddress, vault.id);
+      return {
+        vaultId: vault.id,
+        atomic: BigInt(position?.assetsInVaultAtomic ?? "0"),
+      };
+    }),
+  );
+
+  return balances.filter((entry) => entry.atomic > 0n);
+}
+
 /** Return the wallet API payload the client must sign before depositing. */
 export async function prepareEarnDeposit(
   accessToken: string,
   evmAddress: string,
   rawAmount: string,
+  vaultId?: string,
 ): Promise<{ path: string; body: Record<string, unknown> }> {
   const amount = BigInt(rawAmount);
   if (amount <= 0) {
@@ -229,11 +254,11 @@ export async function prepareEarnDeposit(
 
   const { userId } = await verifyPrivyAccessToken(accessToken);
   const walletId = await resolveEmbeddedWalletId(userId, evmAddress);
-  const vaultId = getVaultId();
+  const id = getVaultId(vaultId);
 
   return {
     path: `/wallets/${encodeURIComponent(walletId)}/earn/ethereum/deposit`,
-    body: { vault_id: vaultId, raw_amount: rawAmount },
+    body: { vault_id: id, raw_amount: rawAmount },
   };
 }
 

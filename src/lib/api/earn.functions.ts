@@ -24,10 +24,15 @@ const accessTokenInput = z.object({
 
 const positionInput = accessTokenInput.extend({
   evmAddress: z.string().min(1),
+  vaultId: z.string().min(1).optional(),
 });
 
 const amountInput = positionInput.extend({
   rawAmount: z.string().regex(/^\d+$/),
+});
+
+const vaultDetailsInput = z.object({
+  vaultId: z.string().min(1).optional(),
 });
 
 const walletActionAuthSchema = z.object({
@@ -36,7 +41,7 @@ const walletActionAuthSchema = z.object({
 });
 
 const signedActionSchema = z.object({
-  id: z.enum(["transfer-wallet", "vault-withdraw", "transfer-vault"]),
+  id: z.string().min(1),
   path: z.string().min(1),
   body: z.record(z.unknown()),
   authorizationSignature: z.string().min(1),
@@ -63,27 +68,33 @@ export const getEarnConfiguredFn = createServerFn({ method: "GET" }).handler(asy
 }));
 
 /** Vault APY, liquidity, and metadata from Privy Earn. */
-export const getEarnVaultDetailsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const configured = isEarnConfigured();
-  if (!configured) {
-    return { details: null, configured: false, detailsError: null };
-  }
+export const getEarnVaultDetailsFn = createServerFn({ method: "GET" })
+  .inputValidator(vaultDetailsInput)
+  .handler(async ({ data }) => {
+    const configured = isEarnConfigured();
+    if (!configured) {
+      return { details: null, configured: false, detailsError: null };
+    }
 
-  try {
-    const details = await getEarnVaultDetails();
-    return { details, configured: true, detailsError: null };
-  } catch (error) {
-    const detailsError =
-      error instanceof Error ? error.message : "Failed to load vault details";
-    return { details: null, configured: true, detailsError };
-  }
-});
+    try {
+      const details = await getEarnVaultDetails(data.vaultId);
+      return { details, configured: true, detailsError: null };
+    } catch (error) {
+      const detailsError =
+        error instanceof Error ? error.message : "Failed to load vault details";
+      return { details: null, configured: true, detailsError };
+    }
+  });
 
 /** Wallet position in the configured earn vault. */
 export const getEarnPositionFn = createServerFn({ method: "GET" })
   .inputValidator(positionInput)
   .handler(async ({ data }) => {
-    const position = await getEarnPositionForUser(data.accessToken, data.evmAddress);
+    const position = await getEarnPositionForUser(
+      data.accessToken,
+      data.evmAddress,
+      data.vaultId,
+    );
     return { position, configured: isEarnConfigured() };
   });
 
@@ -91,7 +102,12 @@ export const getEarnPositionFn = createServerFn({ method: "GET" })
 export const prepareEarnDepositFn = createServerFn({ method: "POST" })
   .inputValidator(amountInput)
   .handler(async ({ data }) => {
-    return prepareEarnDeposit(data.accessToken, data.evmAddress, data.rawAmount);
+    return prepareEarnDeposit(
+      data.accessToken,
+      data.evmAddress,
+      data.rawAmount,
+      data.vaultId,
+    );
   });
 
 /** Deposit Base USDC into the Privy Earn vault. */
@@ -106,6 +122,7 @@ export const earnDepositFn = createServerFn({ method: "POST" })
       authCtx,
       data.clientAuth,
       data.signedBody,
+      data.vaultId,
     );
     const action = await pollEarnAction(result.action.walletId, result.action.id);
     return { action };

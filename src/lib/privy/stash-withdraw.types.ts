@@ -1,6 +1,6 @@
 import type { PrivyWalletActionAuth } from "./wallet-action-auth";
 
-export type StashWithdrawActionId = "transfer-wallet" | "vault-withdraw" | "transfer-vault";
+export type StashWithdrawActionId = string;
 
 export type StashWithdrawPreparedAction = {
   id: StashWithdrawActionId;
@@ -8,15 +8,21 @@ export type StashWithdrawPreparedAction = {
   body: Record<string, unknown>;
 };
 
-/** Exact path/body/auth the client signed — must be replayed verbatim on execute. */
+/** Exact path/body/auth the client must sign — must be replayed verbatim on execute. */
 export type StashWithdrawSignedAction = StashWithdrawPreparedAction & PrivyWalletActionAuth;
 
 export type StashWithdrawAuthMap = Partial<Record<StashWithdrawActionId, PrivyWalletActionAuth>>;
+
+export type StashWithdrawVaultChunk = {
+  vaultId: string;
+  amount: string;
+};
 
 export type StashWithdrawPlan = {
   fromWallet: string;
   fromVault: string;
   fromVoi: string;
+  vaultWithdrawals: StashWithdrawVaultChunk[];
 };
 
 export type StashWithdrawPrepareResult = {
@@ -24,3 +30,11 @@ export type StashWithdrawPrepareResult = {
   plan: StashWithdrawPlan;
   actions: StashWithdrawPreparedAction[];
 };
+
+export function vaultWithdrawActionId(vaultId: string): string {
+  return `vault-withdraw:${vaultId}`;
+}
+
+export function vaultTransferActionId(vaultId: string): string {
+  return `transfer-vault:${vaultId}`;
+}

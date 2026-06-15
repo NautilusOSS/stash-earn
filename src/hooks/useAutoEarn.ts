@@ -7,8 +7,9 @@ import { useBridgeUsdcToVoi } from "@/hooks/useBridgeUsdcToVoi";
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { dorkFiUsdcPositionQueryKey } from "@/hooks/useDorkFiUsdcPosition";
 import { useDorkfiUsdcDeposit } from "@/hooks/useDorkfiUsdcDeposit";
-import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { invalidateEarnPositionQueries } from "@/hooks/useEarnPosition";
 import { useEarnDeposit } from "@/hooks/useEarnDeposit";
+import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useVoiBridgeConfigured } from "@/hooks/useVoiBridgeConfigured";
 import { useXChainExecutionStatus } from "@/hooks/useXChainExecutionStatus";
@@ -21,6 +22,7 @@ import {
   type AutoEarnDestination,
   type ResolvedAutoEarnTarget,
 } from "@/lib/stash/auto-earn";
+import { getEarnVaultName } from "@/lib/privy/vaults";
 import { appendActivity, earnTargetNote } from "@/lib/stash/activity";
 import { waitForExecutionUsdcBalance } from "@/lib/stash/wait-for-voi-usdc";
 import { validateEvmAddress } from "@/lib/xchain/validate";
@@ -31,7 +33,8 @@ export function useAutoEarn(walletAddress: string | undefined) {
   const { user } = usePrivy();
   const queryClient = useQueryClient();
   const preference = getAutoEarnDestination(user);
-  const { configured: earnConfigured, userApyDecimal } = useEarnVaultDetails();
+  const { configured: earnConfigured } = useEarnVaultDetails();
+  const { apyDecimals: earnVaultApyDecimals } = useEarnVaultApys();
   const { supplyApyDecimal } = useDorkFiSupplyApy();
   const { deposit: depositToEarn } = useEarnDeposit(walletAddress);
   const { depositUsdc: depositToDorkFi } = useDorkfiUsdcDeposit(walletAddress);
@@ -49,7 +52,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
 
   const resolvedTarget = resolveAutoEarnTarget({
     preference,
-    earnApyDecimal: userApyDecimal,
+    earnVaultApyDecimals,
     dorkFiApyDecimal: supplyApyDecimal,
     earnConfigured,
     dorkFiExecutionReady,
@@ -62,9 +65,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
       await queryClient.invalidateQueries({
         queryKey: walletUsdcBalanceQueryKey(normalizedAddress),
       });
-      await queryClient.invalidateQueries({
-        queryKey: earnPositionQueryKey(normalizedAddress),
-      });
+      await invalidateEarnPositionQueries(queryClient, normalizedAddress);
       await queryClient.invalidateQueries({
         queryKey: dorkFiUsdcPositionQueryKey(normalizedAddress),
       });
@@ -116,7 +117,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
 
       const target = resolveAutoEarnTarget({
         preference: options?.preferenceOverride ?? preference,
-        earnApyDecimal: userApyDecimal,
+        earnVaultApyDecimals,
         dorkFiApyDecimal: supplyApyDecimal,
         earnConfigured,
         dorkFiExecutionReady,
@@ -134,10 +135,10 @@ export function useAutoEarn(walletAddress: string | undefined) {
       }
 
       try {
-        if (target === "earn_vault") {
-          const action = await depositToEarn(amount);
+        if (target !== "dorkfi") {
+          const action = await depositToEarn(amount, target);
           if (action && options?.notify) {
-            toast.success("USDC is now earning in your Earn vault.");
+            toast.success(`USDC is now earning in ${getEarnVaultName(target)}.`);
           }
         } else {
           await bridgeDepositToVoiIfNeeded(validation.normalized, amount);
@@ -157,10 +158,9 @@ export function useAutoEarn(walletAddress: string | undefined) {
       } catch {
         if (options?.notify) {
           toast.message("Deposit received", {
-            description:
-              target === "earn_vault"
-                ? "USDC may still be settling on Base before it can enter the Earn vault."
-                : "Could not move USDC to Voi or supply to DorkFi yet. Check your execution address and Base wallet balance.",
+            description: target !== "dorkfi"
+              ? `USDC may still be settling on Base before it can enter ${getEarnVaultName(target)}.`
+              : "Could not move USDC to Voi or supply to DorkFi yet. Check your execution address and Base wallet balance.",
           });
         }
         return null;
@@ -169,7 +169,7 @@ export function useAutoEarn(walletAddress: string | undefined) {
     [
       walletAddress,
       preference,
-      userApyDecimal,
+      earnVaultApyDecimals,
       supplyApyDecimal,
       earnConfigured,
       dorkFiExecutionReady,

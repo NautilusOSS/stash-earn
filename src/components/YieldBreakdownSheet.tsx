@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useCompositeYield } from "@/hooks/useCompositeYield";
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { useDorkFiUsdcPosition } from "@/hooks/useDorkFiUsdcPosition";
+import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnPosition } from "@/hooks/useEarnPosition";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
@@ -79,14 +80,11 @@ export function YieldBreakdownSheet({
   const { balance: walletTotal, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
   const {
     assetsInVault,
+    vaultPositions,
     isLoading: positionLoading,
   } = useEarnPosition(walletAddress);
-  const {
-    configured: earnConfigured,
-    userApyLabel,
-    userApyDecimal,
-    isLoading: vaultDetailsLoading,
-  } = useEarnVaultDetails();
+  const { configured: earnConfigured } = useEarnVaultDetails();
+  const { apyDecimals, apyLabels, isLoading: vaultApyLoading } = useEarnVaultApys();
   const {
     balance: dorkFiBalance,
     isLoading: dorkFiLoading,
@@ -107,9 +105,6 @@ export function YieldBreakdownSheet({
   const loading =
     walletLoading || positionLoading || dorkFiLoading || compositeLoading || apyLoading;
 
-  const earnApyLabel = earnConfigured ? userApyLabel : null;
-  const earnApyDecimal = earnConfigured ? userApyDecimal : null;
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -119,8 +114,9 @@ export function YieldBreakdownSheet({
         <SheetHeader className="text-left">
           <SheetTitle className="font-display text-2xl">Yield breakdown</SheetTitle>
           <SheetDescription>
-            Composite yield blends every dollar in your stash. Earn vault and DorkFi balances earn
-            at their live APYs; USDC in your wallet counts at 0% until you move it into yield.
+            Composite yield blends every dollar in your stash. Gauntlet, Steakhouse, and DorkFi
+            balances earn at their live APYs; USDC in your wallet counts at 0% until you move it
+            into yield.
           </SheetDescription>
         </SheetHeader>
 
@@ -136,20 +132,26 @@ export function YieldBreakdownSheet({
             </p>
           ) : (
             <>
-              {earnConfigured && (
-                <BreakdownRow
-                  label="Earn vault"
-                  balance={earnBalance}
-                  apyLabel={vaultDetailsLoading ? null : earnApyLabel}
-                  shareLabel={formatShare(earnBalance, totalBalance)}
-                  contributionLabel={formatApyContribution(
-                    earnBalance,
-                    earnApyDecimal,
-                    totalBalance,
-                  )}
-                  loading={positionLoading || vaultDetailsLoading}
-                />
-              )}
+              {earnConfigured &&
+                vaultPositions.map((vault) => (
+                  <BreakdownRow
+                    key={vault.vaultId}
+                    label={vault.vaultName}
+                    balance={vault.assetsInVault}
+                    apyLabel={
+                      vaultApyLoading
+                        ? null
+                        : apyLabels[vault.vaultId as keyof typeof apyLabels]
+                    }
+                    shareLabel={formatShare(vault.assetsInVault, totalBalance)}
+                    contributionLabel={formatApyContribution(
+                      vault.assetsInVault,
+                      apyDecimals[vault.vaultId as keyof typeof apyDecimals] ?? null,
+                      totalBalance,
+                    )}
+                    loading={positionLoading || vaultApyLoading}
+                  />
+                ))}
               <BreakdownRow
                 label="DorkFi"
                 balance={dorkFiBalance}

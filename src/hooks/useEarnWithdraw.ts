@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 import { earnWithdrawFn, prepareEarnWithdrawFn } from "@/lib/api/earn.functions";
-import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
+import { invalidateEarnPositionQueries } from "@/hooks/useEarnPosition";
 import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
 import { usdcToAtomic, atomicToUsdc } from "@/lib/privy/earn-amount";
@@ -109,9 +109,7 @@ export function useEarnWithdraw(walletAddress: string | undefined) {
           destinationAddress: result.destinationAddress,
         };
         setLastResult(withdrawResult);
-        await queryClient.invalidateQueries({
-          queryKey: earnPositionQueryKey(validation.normalized),
-        });
+        await invalidateEarnPositionQueries(queryClient, validation.normalized);
         await queryClient.invalidateQueries({
           queryKey: walletUsdcBalanceQueryKey(validation.normalized),
         });

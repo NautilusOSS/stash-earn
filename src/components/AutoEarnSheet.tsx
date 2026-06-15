@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
+import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { updateAutoEarnDestination } from "@/lib/api/profile.functions";
 import { getAutoEarnDestination } from "@/lib/privy/profile";
 import {
   AUTO_EARN_OPTIONS,
+  isEarnVaultDestination,
   type AutoEarnDestination,
 } from "@/lib/stash/auto-earn";
 
@@ -24,7 +26,8 @@ export function AutoEarnSheet({
   const { user, getAccessToken } = usePrivy();
   const { refreshUser } = useUser();
   const savedDestination = getAutoEarnDestination(user);
-  const { userApyLabel, configured: earnConfigured } = useEarnVaultDetails();
+  const { configured: earnConfigured } = useEarnVaultDetails();
+  const { apyLabels, isLoading: vaultApyLoading } = useEarnVaultApys();
   const { supplyApyLabel } = useDorkFiSupplyApy();
 
   const [destination, setDestination] = useState<AutoEarnDestination>(savedDestination);
@@ -62,6 +65,22 @@ export function AutoEarnSheet({
     }
   };
 
+  const highestYieldHint = () => {
+    const vaultLabels = AUTO_EARN_OPTIONS.filter((option) =>
+      isEarnVaultDestination(option.id),
+    )
+      .map((option) => {
+        const apy = apyLabels[option.id];
+        return apy ? `${option.label} ${apy}` : null;
+      })
+      .filter(Boolean);
+
+    if (vaultLabels.length > 0 && supplyApyLabel) {
+      return [...vaultLabels, `DorkFi ${supplyApyLabel}`].join(" · ");
+    }
+    return "Compares live APYs at deposit time";
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -78,20 +97,19 @@ export function AutoEarnSheet({
         <div className="mt-6 space-y-3">
           {AUTO_EARN_OPTIONS.map((option) => {
             const selected = destination === option.id;
-            const apyHint =
-              option.id === "earn_vault"
-                ? earnConfigured
-                  ? userApyLabel
-                    ? `${userApyLabel} APY`
-                    : "Earn vault configured"
-                  : "Earn vault not configured"
-                : option.id === "dorkfi"
-                  ? supplyApyLabel
-                    ? `${supplyApyLabel} APY on Voi`
-                    : "DorkFi APY loading"
-                  : earnConfigured && supplyApyLabel
-                    ? `Earn ${userApyLabel ?? "—"} · DorkFi ${supplyApyLabel}`
-                    : "Compares live APYs at deposit time";
+            const apyHint = isEarnVaultDestination(option.id)
+              ? earnConfigured
+                ? vaultApyLoading
+                  ? "APY loading"
+                  : apyLabels[option.id]
+                    ? `${apyLabels[option.id]} APY`
+                    : `${option.label} configured`
+                : "Earn vault not configured"
+              : option.id === "dorkfi"
+                ? supplyApyLabel
+                  ? `${supplyApyLabel} APY on Voi`
+                  : "DorkFi APY loading"
+                : highestYieldHint();
 
             return (
               <button

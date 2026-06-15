@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { AmountKeypad } from "./AmountKeypad";
 import { useBlinkConfigured } from "@/hooks/useBlinkConfigured";
 import { useDynamicConfigured } from "@/hooks/useDynamicConfigured";
+import { useActivity } from "@/hooks/useActivity";
 import { useWithdrawableBalance } from "@/hooks/useWithdrawableBalance";
 import { useEarnWithdraw } from "@/hooks/useEarnWithdraw";
 import { useStashDeposit, type StashDepositMethod } from "@/hooks/useStashDeposit";
 import { fmtUSD } from "@/lib/stash";
+import { depositMethodNote } from "@/lib/stash/activity";
 import { atomicToUsdc } from "@/lib/privy/earn-amount";
 import { truncateAddress } from "@/lib/privy/constants";
 import { getWithdrawAddress } from "@/lib/privy/profile";
@@ -78,6 +80,7 @@ export function MoneySheet({
     isLoading: balanceLoading,
   } = useWithdrawableBalance(walletAddress);
   const { deposit, isSubmitting: isDepositing, error: depositError } = useStashDeposit(walletAddress);
+  const { record: recordActivity } = useActivity(walletAddress);
   const { configured: blinkConfigured } = useBlinkConfigured();
   const { configured: flowConfigured } = useDynamicConfigured();
   const {
@@ -142,16 +145,31 @@ export function MoneySheet({
 
     const ok = await deposit(numeric, depositMethod);
     if (!ok) return;
+    recordActivity({
+      type: "deposit",
+      amount: numeric,
+      note: depositMethodNote(depositMethod),
+    });
     toast.success("Your deposit is in progress.");
     finishSuccess();
   };
 
   const handleBlinkSuccess = () => {
+    recordActivity({
+      type: "deposit",
+      amount: numeric,
+      note: depositMethodNote("blink"),
+    });
     toast.success("Blink deposit complete. Moving USDC into yield when it lands…");
     finishSuccess();
   };
 
   const handleFlowSuccess = () => {
+    recordActivity({
+      type: "deposit",
+      amount: numeric,
+      note: depositMethodNote("flow"),
+    });
     toast.success("Deposit complete. Moving USDC into yield when it lands…");
     finishSuccess();
   };

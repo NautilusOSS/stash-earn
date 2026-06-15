@@ -6,8 +6,9 @@ import { earnWithdrawFn, prepareEarnWithdrawFn } from "@/lib/api/earn.functions"
 import { earnPositionQueryKey } from "@/hooks/useEarnPosition";
 import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
-import { usdcToAtomic } from "@/lib/privy/earn-amount";
+import { usdcToAtomic, atomicToUsdc } from "@/lib/privy/earn-amount";
 import { hasWithdrawAddress } from "@/lib/privy/profile";
+import { appendActivity } from "@/lib/stash/activity";
 import { truncateAddress } from "@/lib/privy/constants";
 import type {
   StashWithdrawPrepareResult,
@@ -114,6 +115,16 @@ export function useEarnWithdraw(walletAddress: string | undefined) {
         await queryClient.invalidateQueries({
           queryKey: walletUsdcBalanceQueryKey(validation.normalized),
         });
+
+        const withdrawnAmount = rawAmountOverride
+          ? atomicToUsdc(rawAmount)
+          : amount;
+        appendActivity(validation.normalized, {
+          type: "withdrawal",
+          amount: withdrawnAmount,
+          note: `To ${truncateAddress(result.destinationAddress)}`,
+        });
+
         return withdrawResult;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Withdrawal failed.";

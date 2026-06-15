@@ -21,6 +21,7 @@ import {
   type AutoEarnDestination,
   type ResolvedAutoEarnTarget,
 } from "@/lib/stash/auto-earn";
+import { appendActivity, earnTargetNote } from "@/lib/stash/activity";
 import { waitForExecutionUsdcBalance } from "@/lib/stash/wait-for-voi-usdc";
 import { validateEvmAddress } from "@/lib/xchain/validate";
 
@@ -147,6 +148,11 @@ export function useAutoEarn(walletAddress: string | undefined) {
         }
 
         await invalidateBalances(validation.normalized);
+        appendActivity(validation.normalized, {
+          type: "earn",
+          amount,
+          note: earnTargetNote(target),
+        });
         return target;
       } catch {
         if (options?.notify) {

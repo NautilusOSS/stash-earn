@@ -11,6 +11,7 @@ import { useCompositeYield } from "@/hooks/useCompositeYield";
 import { useAutoEarn } from "@/hooks/useAutoEarn";
 import { useWalletUsdcBalance } from "@/hooks/useWalletUsdcBalance";
 import { useStash, fmtUSD } from "@/lib/stash";
+import { useActivity } from "@/hooks/useActivity";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
 import { getUserAvatar, getUserWalletAddress } from "@/lib/privy/user";
 
@@ -31,8 +32,9 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { user } = usePrivy();
-  const { apy: fallbackApy, transactions } = useStash();
+  const { apy: fallbackApy } = useStash();
   const walletAddress = getUserWalletAddress(user);
+  const { transactions } = useActivity(walletAddress);
   const { baseBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
   const { applyAutoEarn, resolvedTarget } = useAutoEarn(walletAddress);
   const {
@@ -220,9 +222,13 @@ function Home() {
           </Link>
         </div>
         <div className="mt-2 divide-y divide-border rounded-2xl border border-border bg-card px-4">
-          {recent.map((tx) => (
-            <TransactionRow key={tx.id} tx={tx} />
-          ))}
+          {recent.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No activity yet. Your deposits and withdrawals will show up here.
+            </p>
+          ) : (
+            recent.map((tx) => <TransactionRow key={tx.id} tx={tx} />)
+          )}
         </div>
       </section>
 

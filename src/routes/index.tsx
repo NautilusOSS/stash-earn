@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, Sparkles, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Sparkles, ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { MobileShell } from "@/components/BottomNav";
+import { EarnSheet } from "@/components/EarnSheet";
 import { MoneySheet } from "@/components/MoneySheet";
 import { TransactionRow } from "@/components/TransactionRow";
 import { YieldBreakdownSheet } from "@/components/YieldBreakdownSheet";
@@ -14,6 +15,8 @@ import { useStash, fmtUSD } from "@/lib/stash";
 import { useActivity } from "@/hooks/useActivity";
 import { getTimeBasedGreeting, getPreferredName } from "@/lib/privy/profile";
 import { getUserAvatar, getUserWalletAddress } from "@/lib/privy/user";
+
+const USDC_EPSILON = 0.000_001;
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,8 +38,8 @@ function Home() {
   const { apy: fallbackApy } = useStash();
   const walletAddress = getUserWalletAddress(user);
   const { transactions } = useActivity(walletAddress);
-  const { baseBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
-  const { applyAutoEarn, resolvedTarget } = useAutoEarn(walletAddress);
+  const { baseBalance, executionBalance, isLoading: walletLoading } = useWalletUsdcBalance(walletAddress);
+  const { canEarnFromWallet, canSupplyVoiToDorkFi } = useAutoEarn(walletAddress);
   const {
     totalBalance,
     earningBalance,
@@ -47,7 +50,7 @@ function Home() {
     isLoading: compositeLoading,
   } = useCompositeYield(walletAddress);
   const [sheet, setSheet] = useState<null | "deposit" | "withdraw">(null);
-  const [isEarning, setIsEarning] = useState(false);
+  const [earnOpen, setEarnOpen] = useState(false);
   const [yieldBreakdownOpen, setYieldBreakdownOpen] = useState(false);
 
   const preferredName = getPreferredName(user) ?? "there";
@@ -64,17 +67,30 @@ function Home() {
     ? balanceLabel.split(".")
     : [balanceLabel, "00"];
   const recent = transactions.slice(0, 4);
-  const canEarnFromWallet = baseBalance > 0 && resolvedTarget != null;
+  const walletIdle = baseBalance;
+  const voiIdle = executionBalance;
+  const hasWalletIdle = !balanceLoading && walletIdle > USDC_EPSILON;
+  const hasVoiIdle = !balanceLoading && voiIdle > USDC_EPSILON;
+  const showEarnButton = canEarnFromWallet || canSupplyVoiToDorkFi;
 
-  const handleEarn = async () => {
-    if (!canEarnFromWallet || isEarning) return;
-    setIsEarning(true);
-    try {
-      await applyAutoEarn(baseBalance, { notify: true });
-    } finally {
-      setIsEarning(false);
+  const earnIdleLabel = (() => {
+    if (canEarnFromWallet && canSupplyVoiToDorkFi) {
+      return `${fmtUSD(walletIdle)} in wallet · ${fmtUSD(voiIdle)} on Voi ready to earn`;
     }
-  };
+    if (canEarnFromWallet) {
+      return `${fmtUSD(walletIdle)} in wallet ready to earn`;
+    }
+    if (canSupplyVoiToDorkFi) {
+      return `${fmtUSD(voiIdle)} on Voi ready to supply to DorkFi`;
+    }
+    if (hasVoiIdle) {
+      return `${fmtUSD(voiIdle)} on Voi — finish setup in Account to supply`;
+    }
+    if (hasWalletIdle) {
+      return `${fmtUSD(walletIdle)} in wallet — no earn destination ready yet`;
+    }
+    return null;
+  })();
 
   return (
     <MobileShell>
@@ -132,28 +148,21 @@ function Home() {
             </p>
           </div>
         </div>
-        {canEarnFromWallet && (
+        {earnIdleLabel ? (
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-primary-foreground/10 pt-4">
-            <p className="text-xs text-primary-foreground/60">
-              {fmtUSD(baseBalance)} in wallet ready to earn
-            </p>
-            <button
-              type="button"
-              onClick={() => void handleEarn()}
-              disabled={isEarning || walletLoading}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary-foreground px-4 py-1.5 text-xs font-semibold text-primary transition-opacity disabled:opacity-60"
-            >
-              {isEarning ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Earning…
-                </>
-              ) : (
-                "Earn"
-              )}
-            </button>
+            <p className="text-xs text-primary-foreground/60">{earnIdleLabel}</p>
+            {showEarnButton ? (
+              <button
+                type="button"
+                onClick={() => setEarnOpen(true)}
+                disabled={walletLoading}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary-foreground px-4 py-1.5 text-xs font-semibold text-primary transition-opacity disabled:opacity-60"
+              >
+                Earn
+              </button>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </section>
 
       {/* Actions */}
@@ -231,6 +240,15 @@ function Home() {
           )}
         </div>
       </section>
+
+      <EarnSheet
+        open={earnOpen}
+        onOpenChange={setEarnOpen}
+        walletAddress={walletAddress}
+        baseAmount={baseBalance}
+        voiAmount={executionBalance}
+        preferDorkFi={canSupplyVoiToDorkFi && !canEarnFromWallet}
+      />
 
       <YieldBreakdownSheet
         open={yieldBreakdownOpen}

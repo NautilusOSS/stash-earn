@@ -20,16 +20,14 @@ export function useXChainUsdcOptIn(evmAddress: string | undefined) {
   const [submitResult, setSubmitResult] = useState<XChainAssetOptInSubmitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const optInToUsdc = useCallback(async () => {
+  const optInToUsdc = useCallback(async (): Promise<XChainAssetOptInSubmitResult> => {
     if (!evmAddress) {
-      setError("Connect an EVM wallet first");
-      return;
+      throw new Error("Connect an EVM wallet first");
     }
 
     const validation = validateEvmAddress(evmAddress);
     if (!validation.valid) {
-      setError(validation.error);
-      return;
+      throw new Error(validation.error);
     }
 
     setError(null);
@@ -61,8 +59,11 @@ export function useXChainUsdcOptIn(evmAddress: string | undefined) {
       setSubmitResult(submitted);
       await queryClient.invalidateQueries({ queryKey: ["xchain-execution-status"] });
       await queryClient.invalidateQueries({ queryKey: ["wallet-usdc-balance"] });
+      return submitted;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "USDC opt-in failed");
+      const message = err instanceof Error ? err.message : "USDC opt-in failed";
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsPreparing(false);
       setIsSigning(false);

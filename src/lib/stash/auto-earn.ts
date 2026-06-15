@@ -40,7 +40,7 @@ export const AUTO_EARN_OPTIONS: AutoEarnDestinationOption[] = [
     id: "dorkfi",
     label: "DorkFi",
     description:
-      "Move Base USDC to Voi and supply to DorkFi automatically when your execution address is ready.",
+      "Send wallet USDC to Voi and supply to the DorkFi lending pool.",
   },
   {
     id: "highest_yield",
@@ -89,21 +89,106 @@ function pickHighestYieldVault(
   return bestVault;
 }
 
+export function isDorkFiEarnAvailable(input: {
+  /** Execution status loaded and spendable VOI meets the DorkFi supply minimum. */
+  dorkFiExecutionReady: boolean;
+  usdcOptedIn: boolean;
+  voiBridgeConfigured: boolean;
+  dorkFiUsdcBalance?: number;
+  /** When set, DorkFi via bridge requires wallet USDC on Base. */
+  walletBaseBalance?: number;
+}): boolean {
+  if (!input.dorkFiExecutionReady) return false;
+
+  const hasVoiUsdc = (input.dorkFiUsdcBalance ?? 0) > 0;
+  if (hasVoiUsdc) {
+    return input.usdcOptedIn;
+  }
+
+  const canBridgeFromWallet =
+    input.voiBridgeConfigured &&
+    (input.walletBaseBalance === undefined || input.walletBaseBalance > 0);
+
+  // USDC opt-in is completed as the first step of earn when bridging from Base.
+  return canBridgeFromWallet;
+}
+
+export function getDorkFiEarnHint(input: {
+  available: boolean;
+  voiBridgeConfigured: boolean;
+  dorkFiUsdcBalance?: number;
+  walletBaseBalance?: number;
+  supplyApyLabel?: string | null;
+  usdcOptedIn?: boolean;
+  spendableVoi?: number;
+  minSpendableVoi?: number;
+}): string {
+  const apy = input.supplyApyLabel ? `${input.supplyApyLabel} APY` : "DorkFi yield";
+  const hasVoiUsdc = (input.dorkFiUsdcBalance ?? 0) > 0;
+  const viaBridge =
+    input.voiBridgeConfigured &&
+    !hasVoiUsdc &&
+    (input.walletBaseBalance === undefined || input.walletBaseBalance > 0);
+
+  if (input.available) {
+    if (viaBridge && input.usdcOptedIn === false) {
+      return `Opts into USDC, sends to Voi, then supplies to pool · ${apy}`;
+    }
+    if (viaBridge) {
+      return `Sends wallet USDC to Voi, then supplies to pool · ${apy}`;
+    }
+    if (hasVoiUsdc) {
+      return `Supplies USDC on Voi to pool · ${apy}`;
+    }
+    return `${apy} on Voi`;
+  }
+
+  if (
+    input.spendableVoi != null &&
+    input.minSpendableVoi != null &&
+    input.spendableVoi < input.minSpendableVoi
+  ) {
+    return `Fund execution address with ≥${input.minSpendableVoi} VOI for supply fees`;
+  }
+  if (!input.voiBridgeConfigured && !hasVoiUsdc) {
+    return "Voi bridge not configured on server";
+  }
+  if (
+    input.voiBridgeConfigured &&
+    input.walletBaseBalance != null &&
+    input.walletBaseBalance <= 0 &&
+    !hasVoiUsdc
+  ) {
+    return "No wallet USDC to send to Voi";
+  }
+  if (hasVoiUsdc && input.usdcOptedIn === false) {
+    return "Opt into USDC on your Voi execution address in Account";
+  }
+  return "Not ready yet";
+}
+
 export function resolveAutoEarnTarget(input: {
   preference: AutoEarnDestination;
   earnVaultApyDecimals: Partial<Record<EarnVaultDestinationId, number | null>>;
   dorkFiApyDecimal: number | null;
   earnConfigured: boolean;
-  /** Opted into Voi USDC with enough VOI for a DorkFi deposit. */
+  /** Execution status loaded with enough spendable VOI for DorkFi supply fees. */
   dorkFiExecutionReady: boolean;
+  usdcOptedIn: boolean;
   /** Privy Base transfer + platform Voi USDC mirror configured on the server. */
   voiBridgeConfigured: boolean;
   /** USDC already on the Voi execution address. */
   dorkFiUsdcBalance?: number;
+  /** Base wallet USDC available to bridge for DorkFi earn. */
+  walletBaseBalance?: number;
 }): ResolvedAutoEarnTarget | null {
-  const hasVoiUsdc = (input.dorkFiUsdcBalance ?? 0) > 0;
-  const dorkFiAvailable =
-    input.dorkFiExecutionReady && (hasVoiUsdc || input.voiBridgeConfigured);
+  const dorkFiAvailable = isDorkFiEarnAvailable({
+    dorkFiExecutionReady: input.dorkFiExecutionReady,
+    usdcOptedIn: input.usdcOptedIn,
+    voiBridgeConfigured: input.voiBridgeConfigured,
+    dorkFiUsdcBalance: input.dorkFiUsdcBalance,
+    walletBaseBalance: input.walletBaseBalance,
+  });
 
   if (isEarnVaultDestination(input.preference)) {
     return input.earnConfigured ? input.preference : null;

@@ -1,23 +1,34 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 
 import { useBridgeUsdcToVoi } from "@/hooks/useBridgeUsdcToVoi";
 import { useDorkFiSupplyApy } from "@/hooks/useDorkFiSupplyApy";
 import { dorkFiUsdcPositionQueryKey } from "@/hooks/useDorkFiUsdcPosition";
-import { useDorkfiUsdcDeposit } from "@/hooks/useDorkfiUsdcDeposit";
-import { invalidateEarnPositionQueries } from "@/hooks/useEarnPosition";
 import { useEarnDeposit } from "@/hooks/useEarnDeposit";
+import { invalidateEarnPositionQueries } from "@/hooks/useEarnPosition";
 import { useEarnVaultApys } from "@/hooks/useEarnVaultApys";
 import { useEarnVaultDetails } from "@/hooks/useEarnVaultDetails";
 import { useVoiBridgeConfigured } from "@/hooks/useVoiBridgeConfigured";
+import { usePrivyWalletActionSigner } from "@/hooks/usePrivyWalletActionSigner";
 import { useXChainExecutionStatus } from "@/hooks/useXChainExecutionStatus";
-import { walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
-import { getXChainExecutionStatusFn } from "@/lib/api/dorkfi.functions";
+import { useWalletUsdcBalance, walletUsdcBalanceQueryKey } from "@/hooks/useWalletUsdcBalance";
+import {
+  depositDorkFiUsdcWithClientAuthFn,
+  getXChainExecutionStatusFn,
+  prepareDorkFiUsdcDepositSignFn,
+} from "@/lib/api/dorkfi.functions";
+import {
+  optInXChainUsdcWithClientAuthFn,
+  prepareXChainUsdcOptInSignFn,
+} from "@/lib/api/xchain.functions";
 import { fetchWalletUsdcBalance } from "@/lib/privy/usdcBalance";
 import { getAutoEarnDestination } from "@/lib/privy/profile";
 import {
+  AUTO_EARN_DESTINATIONS,
+  getDorkFiEarnHint,
+  isDorkFiEarnAvailable,
   resolveAutoEarnTarget,
   type AutoEarnDestination,
   type ResolvedAutoEarnTarget,
@@ -30,35 +41,134 @@ import { validateEvmAddress } from "@/lib/xchain/validate";
 const USDC_EPSILON = 0.000_001;
 
 export function useAutoEarn(walletAddress: string | undefined) {
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
+  const { signWalletAction } = usePrivyWalletActionSigner();
   const queryClient = useQueryClient();
   const preference = getAutoEarnDestination(user);
   const { configured: earnConfigured } = useEarnVaultDetails();
   const { apyDecimals: earnVaultApyDecimals } = useEarnVaultApys();
-  const { supplyApyDecimal } = useDorkFiSupplyApy();
+  const { supplyApyDecimal, supplyApyLabel } = useDorkFiSupplyApy();
   const { deposit: depositToEarn } = useEarnDeposit(walletAddress);
-  const { depositUsdc: depositToDorkFi } = useDorkfiUsdcDeposit(walletAddress);
   const { bridgeUsdc } = useBridgeUsdcToVoi(walletAddress);
-  const { status: executionStatus } = useXChainExecutionStatus(walletAddress);
+  const { status: executionStatus, isLoading: executionStatusLoading } =
+    useXChainExecutionStatus(walletAddress);
   const { configured: voiBridgeConfigured } = useVoiBridgeConfigured();
+  const { baseBalance, executionBalance } = useWalletUsdcBalance(walletAddress);
 
   const dorkFiExecutionReady =
     executionStatus != null &&
-    executionStatus.usdcOptedIn &&
     executionStatus.spendableVoi >= executionStatus.minSpendableVoiForDeposit;
 
   const dorkFiUsdcBalance = executionStatus?.usdcBalance ?? 0;
-  const dorkFiReady = dorkFiExecutionReady && dorkFiUsdcBalance > 0;
+  const dorkFiUsdcOptedIn = executionStatus?.usdcOptedIn === true;
+  const dorkFiReady = dorkFiExecutionReady && dorkFiUsdcBalance > 0 && dorkFiUsdcOptedIn;
 
-  const resolvedTarget = resolveAutoEarnTarget({
-    preference,
+  const resolveTargetInput = {
     earnVaultApyDecimals,
     dorkFiApyDecimal: supplyApyDecimal,
     earnConfigured,
     dorkFiExecutionReady,
+    usdcOptedIn: dorkFiUsdcOptedIn,
     voiBridgeConfigured,
     dorkFiUsdcBalance,
-  });
+    walletBaseBalance: baseBalance,
+  };
+
+  const resolveForPreference = useCallback(
+    (destination: AutoEarnDestination): ResolvedAutoEarnTarget | null =>
+      resolveAutoEarnTarget({
+        preference: destination,
+        ...resolveTargetInput,
+      }),
+    [
+      earnVaultApyDecimals,
+      supplyApyDecimal,
+      earnConfigured,
+      dorkFiExecutionReady,
+      dorkFiUsdcOptedIn,
+      voiBridgeConfigured,
+      dorkFiUsdcBalance,
+      baseBalance,
+    ],
+  );
+
+  const resolvedTarget = resolveForPreference(preference);
+
+  const anyEarnReady = useMemo(
+    () => AUTO_EARN_DESTINATIONS.some((destination) => resolveForPreference(destination) != null),
+    [resolveForPreference],
+  );
+
+  const canSupplyVoiToDorkFi = useMemo(
+    () =>
+      executionBalance > USDC_EPSILON &&
+      isDorkFiEarnAvailable({
+        dorkFiExecutionReady,
+        usdcOptedIn: dorkFiUsdcOptedIn,
+        voiBridgeConfigured,
+        dorkFiUsdcBalance,
+        walletBaseBalance: baseBalance,
+      }),
+    [
+      executionBalance,
+      dorkFiExecutionReady,
+      dorkFiUsdcOptedIn,
+      voiBridgeConfigured,
+      dorkFiUsdcBalance,
+      baseBalance,
+    ],
+  );
+
+  const canEarnFromWallet = useMemo(() => {
+    if (baseBalance <= USDC_EPSILON) return false;
+    return AUTO_EARN_DESTINATIONS.some(
+      (destination) => resolveForPreference(destination) != null,
+    );
+  }, [baseBalance, resolveForPreference]);
+
+  const getEarnOptionHint = useCallback(
+    (destination: AutoEarnDestination): string | null => {
+      if (destination !== "dorkfi") return null;
+
+      const available = isDorkFiEarnAvailable({
+        dorkFiExecutionReady,
+        usdcOptedIn: dorkFiUsdcOptedIn,
+        voiBridgeConfigured,
+        dorkFiUsdcBalance,
+        walletBaseBalance: baseBalance,
+      });
+
+      if (executionStatusLoading && voiBridgeConfigured && baseBalance > 0) {
+        return getDorkFiEarnHint({
+          available: true,
+          voiBridgeConfigured,
+          dorkFiUsdcBalance,
+          walletBaseBalance: baseBalance,
+          supplyApyLabel: supplyApyLabel === "…" ? null : supplyApyLabel,
+        });
+      }
+
+      return getDorkFiEarnHint({
+        available: executionStatusLoading ? false : available,
+        voiBridgeConfigured,
+        dorkFiUsdcBalance,
+        walletBaseBalance: baseBalance,
+        usdcOptedIn: executionStatus?.usdcOptedIn,
+        spendableVoi: executionStatus?.spendableVoi,
+        minSpendableVoi: executionStatus?.minSpendableVoiForDeposit,
+      });
+    },
+    [
+      dorkFiExecutionReady,
+      dorkFiUsdcOptedIn,
+      voiBridgeConfigured,
+      dorkFiUsdcBalance,
+      baseBalance,
+      executionStatusLoading,
+      executionStatus,
+      supplyApyLabel,
+    ],
+  );
 
   const invalidateBalances = useCallback(
     async (normalizedAddress: string) => {
@@ -72,6 +182,44 @@ export function useAutoEarn(walletAddress: string | undefined) {
       await queryClient.invalidateQueries({ queryKey: ["xchain-execution-status"] });
     },
     [queryClient],
+  );
+
+  const ensureUsdcOptIn = useCallback(
+    async (normalizedAddress: `0x${string}`) => {
+      const status = await getXChainExecutionStatusFn({
+        data: { evmAddress: normalizedAddress },
+      });
+      if (status.usdcOptedIn) return;
+
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error("Sign in again to opt into USDC on Voi.");
+      }
+
+      const prepared = await prepareXChainUsdcOptInSignFn({
+        data: { accessToken, evmAddress: normalizedAddress },
+      });
+      const clientAuth = await signWalletAction(prepared.rpcPath, prepared.rpcBody);
+
+      await optInXChainUsdcWithClientAuthFn({
+        data: {
+          accessToken,
+          evmAddress: normalizedAddress,
+          unsignedTxnBase64: prepared.unsignedTxnBase64,
+          typedData: prepared.typedData as Record<string, unknown>,
+          rpcPath: prepared.rpcPath,
+          rpcBody: prepared.rpcBody,
+          clientAuth,
+        },
+      });
+      const after = await getXChainExecutionStatusFn({
+        data: { evmAddress: normalizedAddress },
+      });
+      if (!after.usdcOptedIn) {
+        throw new Error("USDC opt-in on your Voi execution address did not complete.");
+      }
+    },
+    [getAccessToken, signWalletAction],
   );
 
   const bridgeDepositToVoiIfNeeded = useCallback(
@@ -115,14 +263,23 @@ export function useAutoEarn(walletAddress: string | undefined) {
       const validation = validateEvmAddress(walletAddress);
       if (!validation.valid) return null;
 
+      const freshStatus = await getXChainExecutionStatusFn({
+        data: { evmAddress: validation.normalized },
+      });
+      const freshWalletUsdc = await fetchWalletUsdcBalance(validation.normalized);
+      const freshExecutionReady =
+        freshStatus.spendableVoi >= freshStatus.minSpendableVoiForDeposit;
+
       const target = resolveAutoEarnTarget({
         preference: options?.preferenceOverride ?? preference,
         earnVaultApyDecimals,
         dorkFiApyDecimal: supplyApyDecimal,
         earnConfigured,
-        dorkFiExecutionReady,
+        dorkFiExecutionReady: freshExecutionReady,
+        usdcOptedIn: freshStatus.usdcOptedIn,
         voiBridgeConfigured,
-        dorkFiUsdcBalance,
+        dorkFiUsdcBalance: freshStatus.usdcBalance,
+        walletBaseBalance: freshWalletUsdc,
       });
 
       if (!target) {
@@ -141,10 +298,60 @@ export function useAutoEarn(walletAddress: string | undefined) {
             toast.success(`USDC is now earning in ${getEarnVaultName(target)}.`);
           }
         } else {
-          await bridgeDepositToVoiIfNeeded(validation.normalized, amount);
-          await depositToDorkFi();
+          const statusBefore = await getXChainExecutionStatusFn({
+            data: { evmAddress: validation.normalized },
+          });
+          const voiOnlySupply =
+            statusBefore.usdcBalance > USDC_EPSILON && amount <= statusBefore.usdcBalance + USDC_EPSILON;
+
+          if (!statusBefore.usdcOptedIn) {
+            if (options?.notify) {
+              toast.message("Opting into USDC on Voi…");
+            }
+            await ensureUsdcOptIn(validation.normalized);
+          }
+
+          const needsBridge = amount > statusBefore.usdcBalance + USDC_EPSILON;
+          if (needsBridge) {
+            if (options?.notify) {
+              toast.message("Moving USDC to Voi…", {
+                description: "Bridging from your Base wallet. This can take up to 2 minutes.",
+              });
+            }
+            await bridgeDepositToVoiIfNeeded(validation.normalized, amount);
+          }
+
+          const accessToken = await getAccessToken();
+          if (!accessToken) {
+            throw new Error("Sign in again to supply USDC to DorkFi.");
+          }
+
           if (options?.notify) {
-            toast.success("USDC moved to Voi and supplied to DorkFi.");
+            toast.message("Supplying to DorkFi…");
+          }
+
+          const prepared = await prepareDorkFiUsdcDepositSignFn({
+            data: { accessToken, evmAddress: validation.normalized },
+          });
+          const clientAuth = await signWalletAction(prepared.rpcPath, prepared.rpcBody);
+          await depositDorkFiUsdcWithClientAuthFn({
+            data: {
+              accessToken,
+              evmAddress: validation.normalized,
+              unsignedTxnsBase64: prepared.unsignedTxnsBase64,
+              typedData: prepared.typedData as Record<string, unknown>,
+              rpcPath: prepared.rpcPath,
+              rpcBody: prepared.rpcBody,
+              clientAuth,
+            },
+          });
+
+          if (options?.notify) {
+            toast.success(
+              voiOnlySupply && !needsBridge
+                ? "USDC on Voi is now supplied to DorkFi."
+                : "USDC moved to Voi and supplied to DorkFi.",
+            );
           }
         }
 
@@ -155,12 +362,11 @@ export function useAutoEarn(walletAddress: string | undefined) {
           note: earnTargetNote(target),
         });
         return target;
-      } catch {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Earn failed";
         if (options?.notify) {
-          toast.message("Deposit received", {
-            description: target !== "dorkfi"
-              ? `USDC may still be settling on Base before it can enter ${getEarnVaultName(target)}.`
-              : "Could not move USDC to Voi or supply to DorkFi yet. Check your execution address and Base wallet balance.",
+          toast.error(target === "dorkfi" ? "DorkFi earn failed" : "Earn failed", {
+            description: message,
           });
         }
         return null;
@@ -175,9 +381,13 @@ export function useAutoEarn(walletAddress: string | undefined) {
       dorkFiExecutionReady,
       voiBridgeConfigured,
       dorkFiUsdcBalance,
+      dorkFiUsdcOptedIn,
+      baseBalance,
       depositToEarn,
+      ensureUsdcOptIn,
       bridgeDepositToVoiIfNeeded,
-      depositToDorkFi,
+      getAccessToken,
+      signWalletAction,
       invalidateBalances,
     ],
   );
@@ -185,6 +395,11 @@ export function useAutoEarn(walletAddress: string | undefined) {
   return {
     preference,
     resolvedTarget,
+    resolveForPreference,
+    anyEarnReady,
+    canEarnFromWallet,
+    canSupplyVoiToDorkFi,
+    getEarnOptionHint,
     dorkFiReady,
     dorkFiExecutionReady,
     applyAutoEarn,

@@ -30,16 +30,14 @@ export function useDorkfiUsdcDeposit(evmAddress: string | undefined) {
     setError(null);
   }, []);
 
-  const depositUsdc = useCallback(async () => {
+  const depositUsdc = useCallback(async (): Promise<DorkFiUsdcDepositSubmitResult> => {
     if (!evmAddress) {
-      setError("Connect an EVM wallet first");
-      return;
+      throw new Error("Connect an EVM wallet first");
     }
 
     const validation = validateEvmAddress(evmAddress);
     if (!validation.valid) {
-      setError(validation.error);
-      return;
+      throw new Error(validation.error);
     }
 
     setError(null);
@@ -74,8 +72,11 @@ export function useDorkfiUsdcDeposit(evmAddress: string | undefined) {
       await queryClient.invalidateQueries({
         queryKey: dorkFiUsdcPositionQueryKey(validation.normalized),
       });
+      return submitted;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "DorkFi deposit failed");
+      const message = err instanceof Error ? err.message : "DorkFi deposit failed";
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsPreparing(false);
       setIsSigning(false);

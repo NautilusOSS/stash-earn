@@ -4,7 +4,10 @@ import { z } from "zod";
 import { deriveXChainAddresses } from "@/lib/xchain/derive.server";
 import {
   getVoiUsdcOptInStatus,
+  optInXChainUsdcAuthed,
+  optInXChainUsdcWithClientAuth,
   prepareXChainUsdcOptIn,
+  prepareXChainUsdcOptInSign,
   submitXChainUsdcOptIn,
 } from "@/lib/xchain/asset-opt-in.server";
 import {
@@ -21,6 +24,27 @@ const submitSelfPaymentInput = z.object({
   evmAddress: z.string().min(1),
   signature: z.string().min(1),
   unsignedTxnBase64: z.string().min(1),
+});
+
+const accessTokenInput = z.object({
+  accessToken: z.string().min(1),
+});
+
+const authedEvmInput = accessTokenInput.extend({
+  evmAddress: z.string().min(1),
+});
+
+const clientAuthInput = z.object({
+  authorizationSignature: z.string().min(1),
+  requestExpiry: z.string().min(1),
+});
+
+const optInWithClientAuthInput = authedEvmInput.extend({
+  unsignedTxnBase64: z.string().min(1),
+  typedData: z.record(z.string(), z.unknown()),
+  rpcPath: z.string().min(1),
+  rpcBody: z.record(z.string(), z.unknown()),
+  clientAuth: clientAuthInput,
 });
 
 /** Derive canonical (AVM v11) and execution (AVM v10) Voi xChain addresses for an EVM owner. */
@@ -49,6 +73,31 @@ export const getVoiUsdcOptInStatusFn = createServerFn({ method: "GET" })
 export const prepareXChainUsdcOptInFn = createServerFn({ method: "POST" })
   .inputValidator(evmAddressInput)
   .handler(async ({ data }) => prepareXChainUsdcOptIn(data.evmAddress));
+
+/** Build opt-in txn plus Privy RPC path/body for client authorization signing. */
+export const prepareXChainUsdcOptInSignFn = createServerFn({ method: "POST" })
+  .inputValidator(authedEvmInput)
+  .handler(async ({ data }) => prepareXChainUsdcOptInSign(data.accessToken, data.evmAddress));
+
+/** Server-sign and submit USDC opt-in (no client wallet prompt). */
+export const optInXChainUsdcAuthedFn = createServerFn({ method: "POST" })
+  .inputValidator(authedEvmInput)
+  .handler(async ({ data }) => optInXChainUsdcAuthed(data.accessToken, data.evmAddress));
+
+/** Client-authorized Privy RPC sign + submit USDC opt-in. */
+export const optInXChainUsdcWithClientAuthFn = createServerFn({ method: "POST" })
+  .inputValidator(optInWithClientAuthInput)
+  .handler(async ({ data }) =>
+    optInXChainUsdcWithClientAuth({
+      accessToken: data.accessToken,
+      evmAddress: data.evmAddress,
+      unsignedTxnBase64: data.unsignedTxnBase64,
+      typedData: data.typedData as never,
+      rpcPath: data.rpcPath,
+      rpcBody: data.rpcBody,
+      clientAuth: data.clientAuth,
+    }),
+  );
 
 /** Attach an EVM EIP-712 signature and submit the USDC opt-in to Voi mainnet. */
 export const submitXChainUsdcOptInFn = createServerFn({ method: "POST" })

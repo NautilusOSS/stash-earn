@@ -93,10 +93,13 @@ export function MoneySheet({
   const [done, setDone] = useState(false);
   const [blinkError, setBlinkError] = useState<string | null>(null);
   const [flowError, setFlowError] = useState<string | null>(null);
+  const [flowPanelStarted, setFlowPanelStarted] = useState(false);
 
   const numeric = Number(amount) || 0;
   const isBlinkDeposit = mode === "deposit" && depositMethod === "blink";
   const isFlowDeposit = mode === "deposit" && depositMethod === "flow";
+  const isAltDeposit = isBlinkDeposit || isFlowDeposit;
+  const showCompactDeposit = isFlowDeposit && flowPanelStarted;
   const isSubmitting = mode === "deposit" ? isDepositing : isWithdrawing;
   const submitError =
     mode === "deposit"
@@ -123,6 +126,7 @@ export function MoneySheet({
     setDepositMethod("fiat");
     setBlinkError(null);
     setFlowError(null);
+    setFlowPanelStarted(false);
   };
 
   const finishSuccess = () => {
@@ -208,14 +212,17 @@ export function MoneySheet({
     >
       <SheetContent
         side="bottom"
-        className="rounded-t-[2rem] border-t-0 bg-background p-0 sm:max-w-md sm:mx-auto"
+        className="flex max-h-[92dvh] flex-col overflow-hidden rounded-t-[2rem] border-t-0 bg-background p-0 sm:max-w-md sm:mx-auto"
       >
-        <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-border" />
-        <SheetHeader className="px-6 pt-4 text-left">
-          <SheetTitle className="text-xl font-semibold tracking-tight">{title}</SheetTitle>
-          <SheetDescription className="text-muted-foreground">{description}</SheetDescription>
-        </SheetHeader>
+        <div className="shrink-0">
+          <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-border" />
+          <SheetHeader className="px-6 pt-4 text-left">
+            <SheetTitle className="text-xl font-semibold tracking-tight">{title}</SheetTitle>
+            <SheetDescription className="text-muted-foreground">{description}</SheetDescription>
+          </SheetHeader>
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         {mode === "withdraw" && balanceLoading ? (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center text-sm text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -260,56 +267,77 @@ export function MoneySheet({
             </p>
           </div>
         ) : (
-          <div className="px-6 pb-6">
-            <div className="py-8 text-center">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                {mode === "deposit" ? "Deposit amount" : "Withdraw amount"}
-              </p>
-              <p className="font-display mt-2 text-6xl tabular-nums leading-none text-foreground">
-                <span className="text-muted-foreground/60">$</span>
-                {amount}
-              </p>
-              {mode === "withdraw" && (
-                <div className="mt-3 space-y-1">
-                  <div className="flex items-center justify-center gap-3">
-                    <p className="text-xs text-muted-foreground">
-                      {voiBalance > 0 && maxWithdraw < totalBalance
-                        ? `${withdrawableLabel} withdrawable now`
-                        : `Available ${availableLabel}`}
-                    </p>
-                    {canWithdrawNow && (
-                      <button
-                        type="button"
-                        onClick={handleWithdrawMax}
-                        className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground transition-colors active:bg-secondary/70"
-                      >
-                        Max
-                      </button>
+          <div className="px-6">
+            {showCompactDeposit ? (
+              <div className="flex items-center justify-between border-b border-border py-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Depositing
+                </p>
+                <p className="font-display text-3xl tabular-nums leading-none text-foreground">
+                  <span className="text-muted-foreground/60">$</span>
+                  {amount}
+                </p>
+              </div>
+            ) : (
+              <div
+                className={
+                  "text-center " + (isAltDeposit ? "py-5" : "py-8")
+                }
+              >
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  {mode === "deposit" ? "Deposit amount" : "Withdraw amount"}
+                </p>
+                <p
+                  className={
+                    "font-display mt-2 tabular-nums leading-none text-foreground " +
+                    (isAltDeposit ? "text-5xl" : "text-6xl")
+                  }
+                >
+                  <span className="text-muted-foreground/60">$</span>
+                  {amount}
+                </p>
+                {mode === "withdraw" && (
+                  <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-center gap-3">
+                      <p className="text-xs text-muted-foreground">
+                        {voiBalance > 0 && maxWithdraw < totalBalance
+                          ? `${withdrawableLabel} withdrawable now`
+                          : `Available ${availableLabel}`}
+                      </p>
+                      {canWithdrawNow && (
+                        <button
+                          type="button"
+                          onClick={handleWithdrawMax}
+                          className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground transition-colors active:bg-secondary/70"
+                        >
+                          Max
+                        </button>
+                      )}
+                    </div>
+                    {breakdownParts.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {breakdownParts.join(" · ")}
+                      </p>
+                    )}
+                    {voiBalance > 0 && maxWithdraw < totalBalance && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {fmtUSD(voiBalance)} on Voi included in total — Base payout coming soon.
+                      </p>
                     )}
                   </div>
-                  {breakdownParts.length > 0 && (
-                    <p className="text-[11px] text-muted-foreground">
-                      {breakdownParts.join(" · ")}
-                    </p>
-                  )}
-                  {voiBalance > 0 && maxWithdraw < totalBalance && (
-                    <p className="text-[11px] text-muted-foreground">
-                      {fmtUSD(voiBalance)} on Voi included in total — Base payout coming soon.
-                    </p>
-                  )}
-                </div>
-              )}
-              {mode === "withdraw" && numeric > maxWithdraw && (
-                <p className="mt-2 text-xs text-destructive">Exceeds available balance.</p>
-              )}
-              {submitError && (
-                <p className="mt-2 text-xs text-destructive">{submitError}</p>
-              )}
-            </div>
+                )}
+                {mode === "withdraw" && numeric > maxWithdraw && (
+                  <p className="mt-2 text-xs text-destructive">Exceeds available balance.</p>
+                )}
+                {submitError && (
+                  <p className="mt-2 text-xs text-destructive">{submitError}</p>
+                )}
+              </div>
+            )}
 
-            <AmountKeypad value={amount} onChange={handleAmountChange} />
+            {!showCompactDeposit && <AmountKeypad value={amount} onChange={handleAmountChange} />}
 
-            {mode === "deposit" ? (
+            {mode === "deposit" && !isAltDeposit ? (
               <div className="mt-6 space-y-2">
                 <p className="px-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                   From
@@ -329,6 +357,7 @@ export function MoneySheet({
                           setDepositMethod(option.id);
                           setBlinkError(null);
                           setFlowError(null);
+                          setFlowPanelStarted(false);
                         }}
                         className={
                           "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors " +
@@ -353,6 +382,43 @@ export function MoneySheet({
                     );
                   })}
                 </div>
+              </div>
+            ) : null}
+
+            {showCompactDeposit && submitError && (
+              <p className="mt-3 text-xs text-destructive">{submitError}</p>
+            )}
+
+            {mode === "deposit" && isAltDeposit ? (
+              <div className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+                {(() => {
+                  const option = depositMethods.find((m) => m.id === depositMethod);
+                  if (!option) return null;
+                  const Icon = option.icon;
+                  return (
+                    <>
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-secondary text-foreground">
+                        <Icon className="h-4 w-4" strokeWidth={1.75} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{option.label}</p>
+                        <p className="truncate text-xs text-muted-foreground">{option.sub}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDepositMethod("fiat");
+                          setFlowPanelStarted(false);
+                          setBlinkError(null);
+                          setFlowError(null);
+                        }}
+                        className="shrink-0 text-xs font-semibold text-muted-foreground underline-offset-2 hover:underline"
+                      >
+                        Change
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             ) : null}
 
@@ -387,6 +453,7 @@ export function MoneySheet({
                     amount={numeric}
                     onSuccess={handleFlowSuccess}
                     onErrorMessage={setFlowError}
+                    onStartedChange={setFlowPanelStarted}
                   />
                 </Suspense>
               </div>
@@ -413,6 +480,7 @@ export function MoneySheet({
             )}
           </div>
         )}
+        </div>
       </SheetContent>
     </Sheet>
   );

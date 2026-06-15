@@ -13,6 +13,7 @@ type DynamicFlowDepositPanelProps = {
   amount: number;
   onSuccess: () => void;
   onErrorMessage?: (message: string | null) => void;
+  onStartedChange?: (started: boolean) => void;
 };
 
 function DynamicFlowDepositPanelReady({
@@ -20,6 +21,7 @@ function DynamicFlowDepositPanelReady({
   amount,
   onSuccess,
   onErrorMessage,
+  onStartedChange,
 }: DynamicFlowDepositPanelProps) {
   const {
     step,
@@ -48,6 +50,10 @@ function DynamicFlowDepositPanelReady({
     setStarted(false);
     reset();
   }, [amount, reset]);
+
+  useEffect(() => {
+    onStartedChange?.(started);
+  }, [started, onStartedChange]);
 
   const hasAmount = amount > 0;
   const hasWallet = Boolean(walletAddress);
